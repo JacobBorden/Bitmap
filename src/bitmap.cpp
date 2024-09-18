@@ -299,24 +299,67 @@ Bitmap::File ChangeImageContrast(Bitmap::File bitmapFile, float contrast)
 
 Pixel ChangePixelContrast(Pixel pixel, float contrast)
 {
-     // Adjust red component
+    // Adjust red component
     int new_red = (int)(128 + (pixel.red - 128) * contrast);
-    if (new_red < 0) new_red = 0;
-    if (new_red > 255) new_red = 255;
+    if (new_red < 0)
+        new_red = 0;
+    if (new_red > 255)
+        new_red = 255;
     pixel.red = new_red;
 
     // Adjust green component
     int new_green = (int)(128 + (pixel.green - 128) * contrast);
-    if (new_green < 0) new_green = 0;
-    if (new_green > 255) new_green = 255;
+    if (new_green < 0)
+        new_green = 0;
+    if (new_green > 255)
+        new_green = 255;
     pixel.green = new_green;
 
     // Adjust blue component
     int new_blue = (int)(128 + (pixel.blue - 128) * contrast);
-    if (new_blue < 0) new_blue = 0;
-    if (new_blue > 255) new_blue = 255;
+    if (new_blue < 0)
+        new_blue = 0;
+    if (new_blue > 255)
+        new_blue = 255;
     pixel.blue = new_blue;
 
+    return pixel;
+}
+
+Pixel PixelContrastRed(Pixel pixel, float contrast)
+{
+
+    int new_red = (int)(128 + (pixel.red - 128) * contrast);
+    if (new_red < 0)
+        new_red = 0;
+    if (new_red > 255)
+        new_red = 255;
+    pixel.red = new_red;
+
+    return pixel;
+}
+
+Pixel PixelContrastGreen(Pixel pixel, float contrast)
+{
+
+    int new_green = (int)(128 + (pixel.green - 128) * contrast);
+    if (new_green < 0)
+        new_green = 0;
+    if (new_green > 255)
+        new_green = 255;
+    pixel.green = new_green;
+
+    return pixel;
+}
+
+Pixel PixelContrastBlue(Pixel pixel, float contrast)
+{
+    int new_blue = (int)(128 + (pixel.blue - 128) * contrast);
+    if (new_blue < 0)
+        new_blue = 0;
+    if (new_blue > 255)
+        new_blue = 255;
+    pixel.blue = new_blue;
     return pixel;
 }
 
