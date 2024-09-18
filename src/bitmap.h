@@ -42,6 +42,9 @@ Bitmap::File ChangeImageLuminanceCyan(Bitmap::File bitmapFile, float saturation)
 Pixel GreyScalePixel(Pixel pixel);
 Pixel ChangePixelBrightness(Pixel pixel, float brightnessl);
 Pixel ChangePixelContrast(Pixel pixel, float contrast);
+Pixel ChangePixelContrastRed(Pixel pixel, float contrast);
+Pixel ChangePixelContrastGreen(Pixel pixel, float contrast);
+Pixel ChangePixelContrastBlue(Pixel pixel, float contrast);
 Pixel ChangePixelSaturation(Pixel pixel, float saturation);
 Pixel ChangePixelSaturationBlue(Pixel pixel, float saturation);
 Pixel ChangePixelSaturationGreen(Pixel pixel, float saturation);
