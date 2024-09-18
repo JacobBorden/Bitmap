@@ -299,28 +299,23 @@ Bitmap::File ChangeImageContrast(Bitmap::File bitmapFile, float contrast)
 
 Pixel ChangePixelContrast(Pixel pixel, float contrast)
 {
-    int average = (pixel.red + pixel.green + pixel.blue) / 3;
-    int newAverage = (int)((erf(((average / 128) - 1) * contrast) + 1) * average);
-    if (((pixel.red - average) + newAverage <= 255) && ((pixel.red - average) + newAverage >= 0))
-        pixel.red = (pixel.red - average) + newAverage;
-    else if (((pixel.red - average) + newAverage < 0))
-        pixel.red = 0;
-    else
-        pixel.red = 255;
+     // Adjust red component
+    int new_red = (int)(128 + (pixel.red - 128) * contrast);
+    if (new_red < 0) new_red = 0;
+    if (new_red > 255) new_red = 255;
+    pixel.red = new_red;
 
-    if (((pixel.green - average) + newAverage <= 255) && ((pixel.green - average) + newAverage >= 0))
-        pixel.green = (pixel.green - average) + newAverage;
-    else if (((pixel.green - average) + newAverage < 0))
-        pixel.green = 0;
-    else
-        pixel.green = 255;
+    // Adjust green component
+    int new_green = (int)(128 + (pixel.green - 128) * contrast);
+    if (new_green < 0) new_green = 0;
+    if (new_green > 255) new_green = 255;
+    pixel.green = new_green;
 
-    if (((pixel.blue - average) + newAverage <= 255) && ((pixel.blue - average) + newAverage >= 0))
-        pixel.blue = (pixel.blue - average) + newAverage;
-    else if (((pixel.blue - average) + newAverage < 0))
-        pixel.blue = 0;
-    else
-        pixel.blue = 255;
+    // Adjust blue component
+    int new_blue = (int)(128 + (pixel.blue - 128) * contrast);
+    if (new_blue < 0) new_blue = 0;
+    if (new_blue > 255) new_blue = 255;
+    pixel.blue = new_blue;
 
     return pixel;
 }
