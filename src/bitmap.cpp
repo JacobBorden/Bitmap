@@ -326,7 +326,7 @@ Pixel ChangePixelContrast(Pixel pixel, float contrast)
     return pixel;
 }
 
-Pixel PixelContrastRed(Pixel pixel, float contrast)
+Pixel ChangePixelContrastRed(Pixel pixel, float contrast)
 {
 
     int new_red = (int)(128 + (pixel.red - 128) * contrast);
@@ -339,7 +339,7 @@ Pixel PixelContrastRed(Pixel pixel, float contrast)
     return pixel;
 }
 
-Pixel PixelContrastGreen(Pixel pixel, float contrast)
+Pixel ChangePixelContrastGreen(Pixel pixel, float contrast)
 {
 
     int new_green = (int)(128 + (pixel.green - 128) * contrast);
@@ -352,7 +352,7 @@ Pixel PixelContrastGreen(Pixel pixel, float contrast)
     return pixel;
 }
 
-Pixel PixelContrastBlue(Pixel pixel, float contrast)
+Pixel ChangePixelContrastBlue(Pixel pixel, float contrast)
 {
     int new_blue = (int)(128 + (pixel.blue - 128) * contrast);
     if (new_blue < 0)
@@ -360,6 +360,76 @@ Pixel PixelContrastBlue(Pixel pixel, float contrast)
     if (new_blue > 255)
         new_blue = 255;
     pixel.blue = new_blue;
+    return pixel;
+}
+
+Pixel ChangePixelContrastMagenta(Pixel pixel, float contrast)
+{
+    int magenta = (std::min)(pixel.red)(pixel.blue);
+    int redoffset = pixel.red - magenta;
+    int blueoffset = pixel.blue - magenta;
+
+    int new_red = (int)(128 + (magenta - 128) * contrast) + redoffset;
+    if (new_red < 0)
+        new_red = 0;
+    if (new_red > 255)
+        new_red = 255;
+    pixel.red = new_red;
+
+    int new_blue = (int)(128 + (magenta - 128) * contrast) + blueoffset;
+    if (new_blue < 0)
+        new_blue = 0;
+    if (new_blue > 255)
+        new_blue = 255;
+    pixel.blue = new_blue;
+
+    return pixel;
+}
+
+Pixel ChangePixelContrastYellow(Pixel pixel, float contrast)
+{
+
+    int yellow = (std::min)(pixel.red)(pixel.green);
+    int redoffset = pixel.red - yellow;
+    int greenoffset = pixel.green - yellow;
+
+    int new_red = (int)(128 + (yellow - 128) * contrast) + redoffset;
+    if (new_red < 0)
+        new_red = 0;
+    if (new_red > 255)
+        new_red = 255;
+    pixel.red = new_red;
+
+    int new_green = (int)(128 + (yellow - 128) * contrast) + greenoffset;
+    if (new_green < 0)
+        new_green = 0;
+    if (new_green > 255)
+        new_green = 255;
+    pixel.green = new_green;
+
+    return pixel;
+}
+
+Pixel ChangePixelContrastCyan(Pixel pixel, float contrast)
+{
+
+    int cyan = (std::min)(pixel.green)(pixel.blue) int greenoffset = green - cyan;
+    int blueoffest = blue - cyan;
+
+    int new_green = (int)(128 + (cyan - 128) * contrast) + greenoffset;
+    if (new_green < 0)
+        new_green = 0;
+    if (new_green > 255)
+        new_green = 255;
+    pixel.green = new_green;
+
+    int new_blue = (int)(128 + (magenta - 128) * contrast) + blueoffset;
+    if (new_blue < 0)
+        new_blue = 0;
+    if (new_blue > 255)
+        new_blue = 255;
+    pixel.blue = new_blue;
+
     return pixel;
 }
 
