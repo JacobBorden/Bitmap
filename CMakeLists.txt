@@ -37,7 +37,3 @@ target_link_libraries(bitmap_tests PRIVATE matrix)
 
 # Add test to CTest
 add_test(NAME BitmapUnitTests COMMAND bitmap_tests)
-
-set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-set( CPACK_PROJECT_VERSION ${PROJECT_VERSION}) 
-include (CPack)
