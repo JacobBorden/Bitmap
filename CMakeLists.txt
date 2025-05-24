@@ -38,5 +38,3 @@ target_link_libraries(bitmap_tests PRIVATE matrix)
 
 # Add test to CTest
 add_test(NAME BitmapUnitTests COMMAND bitmap_tests)
-add_library(bitmap STATIC src/bitmap.cpp )
-link_libraries(bitmap)
