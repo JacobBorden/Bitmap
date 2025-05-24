@@ -25,9 +25,3 @@ link_libraries(bitmapfile)
 add_library(bitmap STATIC src/bitmap.cpp )
 link_libraries(bitmap)
 add_executable(testexe main.cpp)
-
-
-
-set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-set( CPACK_PROJECT_VERSION ${PROJECT_VERSION}) 
-include (Cpack)
