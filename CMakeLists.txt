@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.10)
 project(bitmap VERSION 1.0.0)
 
 include(CTest)
@@ -40,4 +40,4 @@ add_test(NAME BitmapUnitTests COMMAND bitmap_tests)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set( CPACK_PROJECT_VERSION ${PROJECT_VERSION}) 
-include (Cpack)
+include (CPack)
