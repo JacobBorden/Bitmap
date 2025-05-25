@@ -37,11 +37,3 @@ FetchContent_MakeAvailable(googletest)
 
 # Add subdirectory for tests (enables gtest_discover_tests and test auto-discovery)
 add_subdirectory(tests)
-
-# Add test executable
-# It needs to compile the test source file, the bitmap source file, and the dependency's source file
-add_executable(bitmap_tests tests/test_bitmap.cpp src/bitmap.cpp dependencies/bitmapfile/src/bitmap_file.cpp)
-target_link_libraries(bitmap_tests PRIVATE bitmap bitmapfile matrix gtest_main)
-
-# Add test to CTest
-add_test(NAME BitmapUnitTests COMMAND bitmap_tests --gtest_color=yes)
