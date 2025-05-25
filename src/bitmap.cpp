@@ -40,16 +40,16 @@ Bitmap::File ScreenShotWindow(HWND windowHandle)
     if (objectGotSuccessfully)
     {
         // Populate BITMAPINFOHEADER
-        bitmapFile.bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bitmapFile.bitmapInfo.bmiHeader.biWidth = deviceContextBitmap.bmWidth;
-        bitmapFile.bitmapInfo.bmiHeader.biHeight = deviceContextBitmap.bmHeight; // Positive height for bottom-up DIB.
-        bitmapFile.bitmapInfo.bmiHeader.biPlanes = deviceContextBitmap.bmPlanes; // Usually 1.
-        bitmapFile.bitmapInfo.bmiHeader.biBitCount = deviceContextBitmap.bmBitsPixel; // Bits per pixel (e.g., 24 or 32).
-        bitmapFile.bitmapInfo.bmiHeader.biCompression = BI_RGB; // Uncompressed RGB.
+        bitmapFile.bitmapInfoHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bitmapFile.bitmapInfoHeader.biWidth = deviceContextBitmap.bmWidth;
+        bitmapFile.bitmapInfoHeader.biHeight = deviceContextBitmap.bmHeight; // Positive height for bottom-up DIB.
+        bitmapFile.bitmapInfoHeader.biPlanes = deviceContextBitmap.bmPlanes; // Usually 1.
+        bitmapFile.bitmapInfoHeader.biBitCount = deviceContextBitmap.bmBitsPixel; // Bits per pixel (e.g., 24 or 32).
+        bitmapFile.bitmapInfoHeader.biCompression = BI_RGB; // Uncompressed RGB.
         // Calculate image size in bytes. For BI_RGB, this can be 0 if biHeight is positive.
         // However, explicitly calculating it is safer for raw data access.
         int imageSize = deviceContextBitmap.bmWidth * deviceContextBitmap.bmHeight * (deviceContextBitmap.bmBitsPixel / 8);
-        bitmapFile.bitmapInfo.bmiHeader.biSizeImage = imageSize; // Total size of the image data.
+        bitmapFile.bitmapInfoHeader.biSizeImage = imageSize; // Total size of the image data.
         // Resize the vector to hold the pixel data.
         bitmapFile.bitmapData.resize(imageSize);
 
@@ -185,9 +185,9 @@ Matrix::Matrix<Pixel> CreateMatrixFromBitmap(Bitmap::File bitmapFile)
     // Initialize the matrix with dimensions from the bitmap header.
     // Note: Bitmap rows are often stored bottom-up, but matrix access is typically top-down.
     // The loop structure (i from 0 to rows-1) handles this naturally if pixel data is ordered correctly.
-    Matrix::Matrix<Pixel> imageMatrix(bitmapFile.bitmapInfo.bmiHeader.biHeight, bitmapFile.bitmapInfo.bmiHeader.biWidth);
+    Matrix::Matrix<Pixel> imageMatrix(bitmapFile.bitmapInfoHeader.biHeight, bitmapFile.bitmapInfoHeader.biWidth);
 
-    if (bitmapFile.bitmapInfo.bmiHeader.biBitCount == 32) // For 32-bit bitmaps (BGRA)
+    if (bitmapFile.bitmapInfoHeader.biBitCount == 32) // For 32-bit bitmaps (BGRA)
     {
         int k = 0; // Index for bitmapFile.bitmapData
         for (int i = 0; i < imageMatrix.rows(); i++)
@@ -201,7 +201,7 @@ Matrix::Matrix<Pixel> CreateMatrixFromBitmap(Bitmap::File bitmapFile)
                 k += 4; // Move to the next pixel (4 bytes)
             }
     }
-    else if (bitmapFile.bitmapInfo.bmiHeader.biBitCount == 24) // For 24-bit bitmaps (BGR)
+    else if (bitmapFile.bitmapInfoHeader.biBitCount == 24) // For 24-bit bitmaps (BGR)
     {
         int k = 0; // Index for bitmapFile.bitmapData
         for (int i = 0; i < imageMatrix.rows(); i++)
