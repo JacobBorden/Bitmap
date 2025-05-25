@@ -492,9 +492,3 @@ TEST(BitmapTest, ChangePixelLuminanceCyan) {
     Pixel p_not_cyan = {20, 30, 150, 255}; // R is dominant
     EXPECT_EQ(p_not_cyan, ChangePixelLuminanceCyan(p_not_cyan, lum_factor));
 }
-
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
