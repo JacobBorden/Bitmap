@@ -30,11 +30,18 @@ link_libraries(bitmap) # Link bitmap library to subsequent targets if needed
 add_executable(testexe main.cpp)
 target_link_libraries(testexe PRIVATE bitmap bitmapfile matrix) # Link testexe against our libraries
 
+# GoogleTest
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+)
+FetchContent_MakeAvailable(googletest)
+
 # Add test executable
 # It needs to compile the test source file, the bitmap source file, and the dependency's source file
 add_executable(bitmap_tests tests/test_bitmap.cpp src/bitmap.cpp dependencies/bitmapfile/src/bitmap_file.cpp)
-# Link bitmap_tests against the matrix library (as bitmap.cpp depends on it)
-target_link_libraries(bitmap_tests PRIVATE matrix)
+target_link_libraries(bitmap_tests PRIVATE matrix gtest_main)
 
 # Add test to CTest
 add_test(NAME BitmapUnitTests COMMAND bitmap_tests)

@@ -1,25 +1,10 @@
 #include <iostream>
 #include <string>
-#include <cmath> // For fabs in pixel comparison
+#include <cmath>
+#include <gtest/gtest.h>
 
 // Include the header for the code to be tested
-#include "../src/bitmap.h" // Adjust path as necessary
-
-int tests_run = 0;
-int tests_passed = 0;
-
-#define ASSERT_EQUALS(expected, actual, message) \
-    do { \
-        tests_run++; \
-        bool condition = (expected == actual); \
-        if (condition) { \
-            tests_passed++; \
-        } else { \
-            std::cerr << "ASSERTION FAILED: " << message \
-                      << " - Expected: " << expected \
-                      << ", Actual: " << actual << std::endl; \
-        } \
-    } while(0)
+#include "../src/bitmap.h"
 
 // Overload for Pixel struct comparison
 bool operator==(const Pixel& p1, const Pixel& p2) {
@@ -28,38 +13,23 @@ bool operator==(const Pixel& p1, const Pixel& p2) {
            p1.blue == p2.blue && 
            p1.alpha == p2.alpha;
 }
-// For pretty printing Pixel
 std::ostream& operator<<(std::ostream& os, const Pixel& p) {
     os << "R:" << (int)p.red << " G:" << (int)p.green << " B:" << (int)p.blue << " A:" << (int)p.alpha;
     return os;
 }
 
-// Helper for comparing floats with tolerance, if needed for factors
-#define ASSERT_FLOAT_EQUALS(expected, actual, tolerance, message) \
-    do { \
-        tests_run++; \
-        if (std::fabs((expected) - (actual)) < tolerance) { \
-            tests_passed++; \
-        } else { \
-            std::cerr << "ASSERTION FAILED (FLOAT): " << message \
-                      << " - Expected: " << expected \
-                      << ", Actual: " << actual << std::endl; \
-        } \
-    } while(0)
+TEST(PixelTest, InvertPixelColor) {
+    Pixel p1 = {10, 20, 30, 255};
+    Pixel expected1 = {225, 235, 245, 255};
+    EXPECT_EQ(expected1, InvertPixelColor(p1));
 
-void test_InvertPixelColor() {
-    std::cout << "Running test_InvertPixelColor..." << std::endl;
-    Pixel p1 = {10, 20, 30, 255}; // B, G, R, A
-    Pixel expected1 = {225, 235, 245, 255}; // Inverted B, G, R, A (Note: My manual calc was R,G,B order, fixing for B,G,R)
-    ASSERT_EQUALS(expected1, InvertPixelColor(p1), "Invert P1");
+    Pixel p2 = {0, 0, 0, 100};
+    Pixel expected2 = {255, 255, 255, 100};
+    EXPECT_EQ(expected2, InvertPixelColor(p2));
 
-    Pixel p2 = {0, 0, 0, 100}; // Black
-    Pixel expected2 = {255, 255, 255, 100}; // White
-    ASSERT_EQUALS(expected2, InvertPixelColor(p2), "Invert Black");
-
-    Pixel p3 = {255, 255, 255, 50}; // White
-    Pixel expected3 = {0, 0, 0, 50}; // Black
-    ASSERT_EQUALS(expected3, InvertPixelColor(p3), "Invert White");
+    Pixel p3 = {255, 255, 255, 50};
+    Pixel expected3 = {0, 0, 0, 50};
+    EXPECT_EQ(expected3, InvertPixelColor(p3));
 }
 
 void test_ApplySepiaToPixel() {
@@ -589,37 +559,7 @@ void test_ChangePixelLuminanceCyan() {
 }
 
 
-int main() {
-    test_InvertPixelColor();
-    test_ApplySepiaToPixel();
-    test_GreyScalePixel();
-    test_ChangePixelBrightness();
-    test_ChangePixelContrast();
-    test_ChangePixelContrastRed();
-    test_ChangePixelContrastGreen();
-    test_ChangePixelContrastBlue();
-    test_ChangePixelContrastMagenta();
-    test_ChangePixelContrastYellow();
-    test_ChangePixelContrastCyan();
-    test_ChangePixelSaturation();
-    test_ChangePixelLuminanceBlue();
-    test_ChangePixelLuminanceGreen();
-    test_ChangePixelLuminanceRed();
-    test_ChangePixelLuminanceMagenta();
-    test_ChangePixelLuminanceYellow();
-    test_ChangePixelLuminanceCyan();
-
-    // Image Level Tests
-    test_ApplyBoxBlur();
-    test_ShrinkImage();
-    test_RotateImage(); // For RotateImageCounterClockwise
-    test_OtherImageFunctions_Placeholders();
-
-
-    std::cout << std::endl << "Test Summary:" << std::endl;
-    std::cout << "Tests Run: " << tests_run << std::endl;
-    std::cout << "Tests Passed: " << tests_passed << std::endl;
-    std::cout << "Tests Failed: " << (tests_run - tests_passed) << std::endl;
-
-    return (tests_run - tests_passed); // Return 0 if all tests pass
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
