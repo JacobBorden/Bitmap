@@ -229,15 +229,15 @@ Bitmap::File CreateBitmapFromMatrix(Matrix::Matrix<Pixel> imageMatrix)
     Bitmap::File bitmapFile;
 
     // Populate BITMAPINFOHEADER
-    bitmapFile.bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bitmapFile.bitmapInfo.bmiHeader.biWidth = imageMatrix.cols();
-    bitmapFile.bitmapInfo.bmiHeader.biHeight = imageMatrix.rows(); // Positive height for bottom-up DIB.
-    bitmapFile.bitmapInfo.bmiHeader.biPlanes = 1;
-    bitmapFile.bitmapInfo.bmiHeader.biBitCount = 32; // Outputting as 32-bit BGRA.
-    bitmapFile.bitmapInfo.bmiHeader.biCompression = BI_RGB; // Uncompressed.
+    bitmapFile.bitmapInfoHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmapFile.bitmapInfoHeader.biWidth = imageMatrix.cols();
+    bitmapFile.bitmapInfoHeader.biHeight = imageMatrix.rows(); // Positive height for bottom-up DIB.
+    bitmapFile.bitmapInfoHeader.biPlanes = 1;
+    bitmapFile.bitmapInfoHeader.biBitCount = 32; // Outputting as 32-bit BGRA.
+    bitmapFile.bitmapInfoHeader.biCompression = BI_RGB; // Uncompressed.
     // Calculate image size in bytes for a 32-bit image.
     int imageSize = imageMatrix.size() * (32 / 8); // imageMatrix.size() is rows * cols.
-    bitmapFile.bitmapInfo.bmiHeader.biSizeImage = imageSize;
+    bitmapFile.bitmapInfoHeader.biSizeImage = imageSize;
     // Resize the vector to hold the pixel data.
     bitmapFile.bitmapData.resize(imageSize);
 
