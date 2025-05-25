@@ -5,6 +5,7 @@
 
 // Captures a screenshot of a specified window and returns it as a Bitmap::File object.
 // This function uses Windows API calls to interact with window handles and device contexts.
+#ifdef _WIN32
 Bitmap::File ScreenShotWindow(HWND windowHandle)
 {
     Bitmap::File bitmapFile; // Structure to hold bitmap data and headers.
@@ -75,6 +76,7 @@ Bitmap::File ScreenShotWindow(HWND windowHandle)
 
     return bitmapFile;
 }
+#endif // _WIN32
 
 // Inverts the color of a single pixel (Red, Green, Blue channels). Alpha is unchanged.
 Pixel InvertPixelColor(Pixel pixel)
