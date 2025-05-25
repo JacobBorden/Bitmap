@@ -92,11 +92,10 @@ Pixel InvertPixelColor(Pixel pixel)
 Bitmap::File InvertImageColors(Bitmap::File bitmapFile)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = InvertPixelColor(pixels);
-    bitmapFile = CreateBitmapFromMatrix(imageMatrix);
-    return bitmapFile;
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = InvertPixelColor(imageMatrix[i][j]);
+    return CreateBitmapFromMatrix(imageMatrix);
 }
 
 // Applies sepia tone to a single pixel.
@@ -118,11 +117,10 @@ Pixel ApplySepiaToPixel(Pixel pixel)
 Bitmap::File ApplySepiaTone(Bitmap::File bitmapFile)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ApplySepiaToPixel(pixels);
-    bitmapFile = CreateBitmapFromMatrix(imageMatrix);
-    return bitmapFile;
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ApplySepiaToPixel(imageMatrix[i][j]);
+    return CreateBitmapFromMatrix(imageMatrix);
 }
 
 // Applies a box blur to the image with a given radius.
@@ -138,18 +136,18 @@ Bitmap::File ApplyBoxBlur(Bitmap::File bitmapFile, int blurRadius)
     Matrix::Matrix<Pixel> blurredMatrix(originalMatrix.rows(), originalMatrix.cols());
 
     // Iterate over each pixel in the original image.
-    for (int r = 0; r < originalMatrix.rows(); ++r) // r for row
+    for (int r = 0; r < static_cast<int>(originalMatrix.rows()); ++r) // r for row
     {
-        for (int c = 0; c < originalMatrix.cols(); ++c) // c for column
+        for (int c = 0; c < static_cast<int>(originalMatrix.cols()); ++c) // c for column
         {
             unsigned int sumRed = 0, sumGreen = 0, sumBlue = 0, sumAlpha = 0;
             int count = 0; // Number of pixels included in the blur box.
 
             // Iterate over the box defined by blurRadius around the current pixel (r, c).
             // std::max and std::min are used to handle boundary conditions, ensuring we don't go out of bounds.
-            for (int i = std::max(0, r - blurRadius); i <= std::min(originalMatrix.rows() - 1, r + blurRadius); ++i)
+            for (int i = std::max(0, r - blurRadius); i <= std::min(r + blurRadius, static_cast<int>(originalMatrix.rows()) - 1); ++i)
             {
-                for (int j = std::max(0, c - blurRadius); j <= std::min(originalMatrix.cols() - 1, c + blurRadius); ++j)
+                for (int j = std::max(0, c - blurRadius); j <= std::min(c + blurRadius, static_cast<int>(originalMatrix.cols()) - 1); ++j)
                 {
                     // Accumulate color and alpha values.
                     sumRed += originalMatrix[i][j].red;
@@ -270,11 +268,10 @@ Bitmap::File CreateBitmapFromMatrix(Matrix::Matrix<Pixel> imageMatrix)
 Bitmap::File GreyscaleImage(Bitmap::File bitmapFile)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = GreyScalePixel(pixels);
-    bitmapFile = CreateBitmapFromMatrix(imageMatrix);
-    return bitmapFile;
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = GreyScalePixel(imageMatrix[i][j]);
+    return CreateBitmapFromMatrix(imageMatrix);
 }
 
 // Shrinks an image by an integer scale factor using averaging.
@@ -374,203 +371,30 @@ Bitmap::File FlipImage(Bitmap::File bitmapFile)
 Bitmap::File ChangeImageBrightness(Bitmap::File bitmapFile, float brightness)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelBrightness(pixels, brightness);
-    bitmapFile = CreateBitmapFromMatrix(imageMatrix);
-    return bitmapFile;
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelBrightness(imageMatrix[i][j], brightness);
+    return CreateBitmapFromMatrix(imageMatrix);
 }
 
 // Changes the overall saturation of the image.
 Bitmap::File ChangeImageSaturation(Bitmap::File bitmapFile, float saturation)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelSaturation(pixels, saturation);
-    bitmapFile = CreateBitmapFromMatrix(imageMatrix);
-
-    return bitmapFile;
-}
-
-// Converts a single pixel to its greyscale equivalent.
-// Greyscale is calculated by averaging the red, green, and blue components.
-Pixel GreyScalePixel(Pixel pixel)
-{
-    int average = (pixel.red + pixel.blue + pixel.green) / 3;
-    pixel.blue = average;
-    pixel.red = average;
-    pixel.green = average;
-    return pixel;
-}
-
-// Changes the brightness of a single pixel.
-// It calculates the average intensity and then scales each color component relative to this average.
-Pixel ChangePixelBrightness(Pixel pixel, float brightness) // Parameter name was 'brightnessl' in header, using 'brightness' here.
-{
-    int average = (pixel.red + pixel.green + pixel.blue) / 3;
-    int newAverage = (int)(average * brightness);
-
-    // Calculate new red value, clamping to 0-255
-    int new_red_val = (pixel.red - average) + newAverage;
-    if (new_red_val < 0) pixel.red = 0;
-    else if (new_red_val > 255) pixel.red = 255;
-    else pixel.red = (BYTE)new_red_val;
-
-    // Calculate new green value, clamping to 0-255
-    int new_green_val = (pixel.green - average) + newAverage;
-    if (new_green_val < 0) pixel.green = 0;
-    else if (new_green_val > 255) pixel.green = 255;
-    else pixel.green = (BYTE)new_green_val;
-
-    // Calculate new blue value, clamping to 0-255
-    int new_blue_val = (pixel.blue - average) + newAverage;
-    if (new_blue_val < 0) pixel.blue = 0;
-    else if (new_blue_val > 255) pixel.blue = 255;
-    else pixel.blue = (BYTE)new_blue_val;
-    // Alpha remains unchanged.
-    return pixel;
-}
-
-// Changes the saturation of a single pixel.
-// It adjusts how far each color component is from the average intensity (greyscale).
-Pixel ChangePixelSaturation(Pixel pixel, float saturation)
-{
-    int average = (pixel.red + pixel.green + pixel.blue) / 3;
-    if (pixel.red > average)
-    {
-        if ((((pixel.red - average) * saturation + average) <= 255) && (((pixel.red - average) * saturation + average) >= 0))
-            pixel.red = (BYTE)((pixel.red - average) * saturation + average);
-        else if ((((pixel.red - average) * saturation + average) > 255))
-            pixel.red = 255;
-        else
-            pixel.red = 0;
-    }
-    if (pixel.green > average)
-    {
-        if ((((pixel.green - average) * saturation + average) <= 255) && (((pixel.green - average) * saturation + average) >= 0))
-            pixel.green = (BYTE)((pixel.green - average) * saturation + average);
-        else if ((((pixel.green - average) * saturation + average) > 255))
-            pixel.green = 255;
-        else
-            pixel.green = 0;
-    }
-
-    if (pixel.blue > average)
-    {
-        if ((((pixel.blue - average) * saturation + average) <= 255) && (((pixel.blue - average) * saturation + average) >= 0))
-            pixel.blue = (BYTE)((pixel.blue - average) * saturation + average);
-        else if ((((pixel.blue - average) * saturation + average) > 255))
-            pixel.blue = 255;
-        else
-            pixel.blue = 0;
-    }
-    return pixel;
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelSaturation(imageMatrix[i][j], saturation);
+    return CreateBitmapFromMatrix(imageMatrix);
 }
 
 // Changes the overall contrast of the image.
 Bitmap::File ChangeImageContrast(Bitmap::File bitmapFile, float contrast)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelContrast(pixels, contrast);
-    bitmapFile = CreateBitmapFromMatrix(imageMatrix);
-    return bitmapFile;
-}
-
-// Changes the contrast of a single pixel.
-// This is done by scaling the difference of each color component from a mid-point (128).
-Pixel ChangePixelContrast(Pixel pixel, float contrast)
-{
-    // Adjust red component
-    int new_red = (int)(128 + (pixel.red - 128) * contrast);
-    pixel.red = (BYTE)std::max(0, std::min(255, new_red)); // Clamp to 0-255
-
-    // Adjust green component
-    int new_green = (int)(128 + (pixel.green - 128) * contrast);
-    pixel.green = (BYTE)std::max(0, std::min(255, new_green)); // Clamp to 0-255
-
-    // Adjust blue component
-    int new_blue = (int)(128 + (pixel.blue - 128) * contrast);
-    pixel.blue = (BYTE)std::max(0, std::min(255, new_blue)); // Clamp to 0-255
-    // Alpha remains unchanged.
-    return pixel;
-}
-
-// Changes the contrast of the red channel of a single pixel.
-Pixel ChangePixelContrastRed(Pixel pixel, float contrast)
-{
-    int new_red = (int)(128 + (pixel.red - 128) * contrast);
-    pixel.red = (BYTE)std::max(0, std::min(255, new_red)); // Clamp to 0-255
-    // Other channels and alpha remain unchanged.
-    return pixel;
-}
-
-// Changes the contrast of the green channel of a single pixel.
-Pixel ChangePixelContrastGreen(Pixel pixel, float contrast)
-{
-    int new_green = (int)(128 + (pixel.green - 128) * contrast);
-    pixel.green = (BYTE)std::max(0, std::min(255, new_green)); // Clamp to 0-255
-    // Other channels and alpha remain unchanged.
-    return pixel;
-}
-
-// Changes the contrast of the blue channel of a single pixel.
-Pixel ChangePixelContrastBlue(Pixel pixel, float contrast)
-{
-    int new_blue = (int)(128 + (pixel.blue - 128) * contrast);
-    pixel.blue = (BYTE)std::max(0, std::min(255, new_blue)); // Clamp to 0-255
-    // Other channels and alpha remain unchanged.
-    return pixel;
-}
-
-// Applies contrast adjustment to the red and blue channels of a pixel (Magenta).
-// Contrast is applied directly to the constituent primary color channels.
-Pixel ChangePixelContrastMagenta(Pixel pixel, float contrast)
-{
-    // Adjust red component
-    int new_red = (int)(128 + (pixel.red - 128) * contrast);
-    pixel.red = (BYTE)std::max(0, std::min(255, new_red)); // Clamp to 0-255
-
-    // Adjust blue component
-    int new_blue = (int)(128 + (pixel.blue - 128) * contrast);
-    pixel.blue = (BYTE)std::max(0, std::min(255, new_blue)); // Clamp to 0-255
-
-    // Green channel remains unchanged for magenta contrast
-    return pixel;
-}
-
-// Applies contrast adjustment to the red and green channels of a pixel (Yellow).
-// Contrast is applied directly to the constituent primary color channels.
-Pixel ChangePixelContrastYellow(Pixel pixel, float contrast)
-{
-    // Adjust red component
-    int new_red = (int)(128 + (pixel.red - 128) * contrast);
-    pixel.red = (BYTE)std::max(0, std::min(255, new_red)); // Clamp to 0-255
-
-    // Adjust green component
-    int new_green = (int)(128 + (pixel.green - 128) * contrast);
-    pixel.green = (BYTE)std::max(0, std::min(255, new_green)); // Clamp to 0-255
-
-    // Blue channel remains unchanged for yellow contrast
-    return pixel;
-}
-
-// Applies contrast adjustment to the green and blue channels of a pixel (Cyan).
-// Contrast is applied directly to the constituent primary color channels.
-Pixel ChangePixelContrastCyan(Pixel pixel, float contrast)
-{
-    // Adjust green component
-    int new_green = (int)(128 + (pixel.green - 128) * contrast);
-    pixel.green = (BYTE)std::max(0, std::min(255, new_green)); // Clamp to 0-255
-
-    // Adjust blue component
-    int new_blue = (int)(128 + (pixel.blue - 128) * contrast);
-    pixel.blue = (BYTE)std::max(0, std::min(255, new_blue)); // Clamp to 0-255
-
-    // Red channel remains unchanged for cyan contrast
-    return pixel;
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelContrast(imageMatrix[i][j], contrast);
+    return CreateBitmapFromMatrix(imageMatrix);
 }
 
 // Changes the saturation of the blue channel of a single pixel.
@@ -677,9 +501,9 @@ Pixel ChangePixelSaturationCyan(Pixel pixel, float saturation)
 Bitmap::File ChangeImageSaturationBlue(Bitmap::File bitmapFile, float saturation)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelSaturationBlue(pixels, saturation);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelSaturationBlue(imageMatrix[i][j], saturation);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -689,9 +513,9 @@ Bitmap::File ChangeImageSaturationBlue(Bitmap::File bitmapFile, float saturation
 Bitmap::File ChangeImageSaturationGreen(Bitmap::File bitmapFile, float saturation)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelSaturationGreen(pixels, saturation);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelSaturationGreen(imageMatrix[i][j], saturation);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -701,9 +525,9 @@ Bitmap::File ChangeImageSaturationGreen(Bitmap::File bitmapFile, float saturatio
 Bitmap::File ChangeImageSaturationRed(Bitmap::File bitmapFile, float saturation)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelSaturationRed(pixels, saturation);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelSaturationRed(imageMatrix[i][j], saturation);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -713,9 +537,9 @@ Bitmap::File ChangeImageSaturationRed(Bitmap::File bitmapFile, float saturation)
 Bitmap::File ChangeImageSaturationMagenta(Bitmap::File bitmapFile, float saturation)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelSaturationMagenta(pixels, saturation);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelSaturationMagenta(imageMatrix[i][j], saturation);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -725,9 +549,9 @@ Bitmap::File ChangeImageSaturationMagenta(Bitmap::File bitmapFile, float saturat
 Bitmap::File ChangeImageSaturationYellow(Bitmap::File bitmapFile, float saturation)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelSaturationYellow(pixels, saturation);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelSaturationYellow(imageMatrix[i][j], saturation);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -737,9 +561,9 @@ Bitmap::File ChangeImageSaturationYellow(Bitmap::File bitmapFile, float saturati
 Bitmap::File ChangeImageSaturationCyan(Bitmap::File bitmapFile, float saturation)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelSaturationCyan(pixels, saturation);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelSaturationCyan(imageMatrix[i][j], saturation);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -886,9 +710,9 @@ Pixel ChangePixelLuminanceCyan(Pixel pixel, float luminance)
 Bitmap::File ChangeImageLuminanceBlue(Bitmap::File bitmapFile, float luminance)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelLuminanceBlue(pixels, luminance);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelLuminanceBlue(imageMatrix[i][j], luminance);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -898,9 +722,9 @@ Bitmap::File ChangeImageLuminanceBlue(Bitmap::File bitmapFile, float luminance)
 Bitmap::File ChangeImageLuminanceGreen(Bitmap::File bitmapFile, float luminance)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelLuminanceGreen(pixels, luminance);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelLuminanceGreen(imageMatrix[i][j], luminance);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -910,9 +734,9 @@ Bitmap::File ChangeImageLuminanceGreen(Bitmap::File bitmapFile, float luminance)
 Bitmap::File ChangeImageLuminanceRed(Bitmap::File bitmapFile, float luminance)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelLuminanceRed(pixels, luminance);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelLuminanceRed(imageMatrix[i][j], luminance);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -922,9 +746,9 @@ Bitmap::File ChangeImageLuminanceRed(Bitmap::File bitmapFile, float luminance)
 Bitmap::File ChangeImageLuminanceMagenta(Bitmap::File bitmapFile, float luminance)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelLuminanceMagenta(pixels, luminance);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelLuminanceMagenta(imageMatrix[i][j], luminance);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -934,9 +758,9 @@ Bitmap::File ChangeImageLuminanceMagenta(Bitmap::File bitmapFile, float luminanc
 Bitmap::File ChangeImageLuminanceYellow(Bitmap::File bitmapFile, float luminance)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelLuminanceYellow(pixels, luminance);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelLuminanceYellow(imageMatrix[i][j], luminance);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
@@ -946,9 +770,9 @@ Bitmap::File ChangeImageLuminanceYellow(Bitmap::File bitmapFile, float luminance
 Bitmap::File ChangeImageLuminanceCyan(Bitmap::File bitmapFile, float luminance)
 {
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
-    for (auto rows : imageMatrix)
-        for (auto &pixels : rows)
-            pixels = ChangePixelLuminanceCyan(pixels, luminance);
+    for (int i = 0; i < imageMatrix.rows(); ++i)
+        for (int j = 0; j < imageMatrix.cols(); ++j)
+            imageMatrix[i][j] = ChangePixelLuminanceCyan(imageMatrix[i][j], luminance);
     bitmapFile = CreateBitmapFromMatrix(imageMatrix);
 
     return bitmapFile;
