@@ -20,11 +20,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(bitmapfile)
 FetchContent_MakeAvailable(matrix)
 
-link_libraries(matrix)
-link_libraries(bitmapfile)
-
-add_library(bitmap STATIC src/bitmap.cpp ) # Main library
-link_libraries(bitmap) # Link bitmap library to subsequent targets if needed
+# Add your main library
+add_library(bitmap STATIC src/bitmap.cpp )
 
 # Executable for main.cpp (if it's a demo or separate utility)
 add_executable(testexe main.cpp)
@@ -41,7 +38,7 @@ FetchContent_MakeAvailable(googletest)
 # Add test executable
 # It needs to compile the test source file, the bitmap source file, and the dependency's source file
 add_executable(bitmap_tests tests/test_bitmap.cpp src/bitmap.cpp dependencies/bitmapfile/src/bitmap_file.cpp)
-target_link_libraries(bitmap_tests PRIVATE matrix gtest_main)
+target_link_libraries(bitmap_tests PRIVATE bitmap bitmapfile matrix gtest_main)
 
 # Add test to CTest
 add_test(NAME BitmapUnitTests COMMAND bitmap_tests)
