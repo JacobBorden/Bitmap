@@ -41,4 +41,4 @@ add_executable(bitmap_tests tests/test_bitmap.cpp src/bitmap.cpp dependencies/bi
 target_link_libraries(bitmap_tests PRIVATE bitmap bitmapfile matrix gtest_main)
 
 # Add test to CTest
-add_test(NAME BitmapUnitTests COMMAND bitmap_tests)
+add_test(NAME BitmapUnitTests COMMAND bitmap_tests --gtest_color=yes)
