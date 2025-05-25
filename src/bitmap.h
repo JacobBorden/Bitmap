@@ -35,7 +35,7 @@ Bitmap::File ScreenShotWindow(HWND WindowHandle);
 //   imageMatrix: The Matrix::Matrix<Pixel> to convert.
 // Returns:
 //   A Bitmap::File object representing the image.
-Bitmap::File CreateBitmapFromMatrix(Matrix::Matrix<Pixel> imageMatrix);
+Bitmap::File CreateBitmapFromMatrix(const Matrix::Matrix<Pixel> &imageMatrix);
 
 // Shrinks the image by a given scale factor.
 // Parameters:

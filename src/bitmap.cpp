@@ -222,7 +222,7 @@ Matrix::Matrix<Pixel> CreateMatrixFromBitmap(Bitmap::File bitmapFile)
 // Converts a Matrix::Matrix<Pixel> (representing an image)
 // back into a Bitmap::File object (with raw bitmap data and headers).
 // Assumes output is always a 32-bit bitmap.
-Bitmap::File CreateBitmapFromMatrix(Matrix::Matrix<Pixel> imageMatrix)
+Bitmap::File CreateBitmapFromMatrix(const Matrix::Matrix<Pixel>& imageMatrix)
 {
     Bitmap::File bitmapFile;
 
@@ -327,8 +327,7 @@ Bitmap::File RotateImageCounterClockwise(Bitmap::File bitmapFile)
     for (int i = 0; i < imageMatrix.rows(); i++)
         for (int j = 0; j < imageMatrix.cols(); j++)
             rotatedMatrix[j][rotatedMatrix.cols() - i - 1] = imageMatrix[i][j];
-    bitmapFile = CreateBitmapFromMatrix(rotatedMatrix);
-    return bitmapFile;
+    return CreateBitmapFromMatrix(rotatedMatrix);
 }
 
 // Rotates the image 90 degrees clockwise.
@@ -339,8 +338,7 @@ Bitmap::File RotateImageClockwise(Bitmap::File bitmapFile)
     for (int i = 0; i < imageMatrix.rows(); i++)
         for (int j = 0; j < imageMatrix.cols(); j++)
             rotatedMatrix[rotatedMatrix.rows() - j - 1][i] = imageMatrix[i][j];
-    bitmapFile = CreateBitmapFromMatrix(rotatedMatrix);
-    return bitmapFile;
+    return CreateBitmapFromMatrix(rotatedMatrix);
 }
 
 // Mirrors the image horizontally (left to right).
@@ -351,8 +349,7 @@ Bitmap::File MirrorImage(Bitmap::File bitmapFile)
     for (int i = 0; i < imageMatrix.rows(); i++)
         for (int j = 0; j < imageMatrix.cols(); j++)
             mirroredMatrix[i][mirroredMatrix.cols() - j - 1] = imageMatrix[i][j];
-    bitmapFile = CreateBitmapFromMatrix(mirroredMatrix);
-    return bitmapFile;
+    return CreateBitmapFromMatrix(mirroredMatrix);
 }
 
 // Flips the image vertically (top to bottom).
@@ -363,8 +360,7 @@ Bitmap::File FlipImage(Bitmap::File bitmapFile)
     for (int i = 0; i < imageMatrix.rows(); i++)
         for (int j = 0; j < imageMatrix.cols(); j++)
             flippedMatrix[flippedMatrix.rows() - i - 1][j] = imageMatrix[i][j];
-    bitmapFile = CreateBitmapFromMatrix(flippedMatrix);
-    return bitmapFile;
+    return CreateBitmapFromMatrix(flippedMatrix);
 }
 
 // Changes the overall brightness of the image.
