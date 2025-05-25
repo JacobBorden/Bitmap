@@ -27,8 +27,9 @@ Matrix::Matrix<Pixel> CreateMatrixFromBitmap(Bitmap::File bitmapFile);
 //   WindowHandle: Handle to the window to capture.
 // Returns:
 //   A Bitmap::File object containing the screenshot.
+#ifdef _WIN32
 Bitmap::File ScreenShotWindow(HWND WindowHandle);
-
+#endif // _WIN32
 // Converts a Matrix::Matrix<Pixel> into a Bitmap::File object.
 // Parameters:
 //   imageMatrix: The Matrix::Matrix<Pixel> to convert.
