@@ -820,3 +820,36 @@ Pixel ChangePixelContrast(Pixel pixel, float contrast) {
     pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
     return pixel;
 }
+
+Pixel ChangePixelContrastRed(Pixel pixel, float contrast) {
+    pixel.red = std::clamp(static_cast<int>(128 + (pixel.red - 128) * contrast), 0, 255);
+    return pixel;
+}
+
+Pixel ChangePixelContrastGreen(Pixel pixel, float contrast) {
+    pixel.green = std::clamp(static_cast<int>(128 + (pixel.green - 128) * contrast), 0, 255);
+    return pixel;
+}
+
+Pixel ChangePixelContrastBlue(Pixel pixel, float contrast) {
+    pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
+    return pixel;
+}
+
+Pixel ChangePixelContrastMagenta(Pixel pixel, float contrast) {
+    pixel.red = std::clamp(static_cast<int>(128 + (pixel.red - 128) * contrast), 0, 255);
+    pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
+    return pixel;
+}
+
+Pixel ChangePixelContrastYellow(Pixel pixel, float contrast) {
+    pixel.red = std::clamp(static_cast<int>(128 + (pixel.red - 128) * contrast), 0, 255);
+    pixel.green = std::clamp(static_cast<int>(128 + (pixel.green - 128) * contrast), 0, 255);
+    return pixel;
+}
+
+Pixel ChangePixelContrastCyan(Pixel pixel, float contrast) {
+    pixel.green = std::clamp(static_cast<int>(128 + (pixel.green - 128) * contrast), 0, 255);
+    pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
+    return pixel;
+}
