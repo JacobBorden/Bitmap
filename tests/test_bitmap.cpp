@@ -20,7 +20,7 @@ std::ostream& operator<<(std::ostream& os, const Pixel& p) {
 
 TEST(PixelTest, InvertPixelColor) {
     Pixel p1 = {10, 20, 30, 255};
-    Pixel expected1 = {225, 235, 245, 255};
+    Pixel expected1 = {245, 235, 225, 255};
     EXPECT_EQ(expected1, InvertPixelColor(p1));
 
     Pixel p2 = {0, 0, 0, 100};
