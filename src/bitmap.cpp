@@ -778,3 +778,45 @@ Bitmap::File ChangeImageLuminanceCyan(Bitmap::File bitmapFile, float luminance)
 
     return bitmapFile;
 }
+
+// Converts a pixel to greyscale by averaging its RGB components.
+Pixel GreyScalePixel(Pixel pixel) {
+    int average = (pixel.red + pixel.green + pixel.blue) / 3;
+    pixel.red = average;
+    pixel.green = average;
+    pixel.blue = average;
+    return pixel;
+}
+
+// Changes the brightness of a pixel. The brightness is adjusted by scaling the pixel's RGB values around their average.
+Pixel ChangePixelBrightness(Pixel pixel, float brightness) {
+    int average = (pixel.red + pixel.green + pixel.blue) / 3;
+    int newAverage = static_cast<int>(average * brightness);
+    int new_red = (pixel.red - average) + newAverage;
+    int new_green = (pixel.green - average) + newAverage;
+    int new_blue = (pixel.blue - average) + newAverage;
+    pixel.red = std::clamp(new_red, 0, 255);
+    pixel.green = std::clamp(new_green, 0, 255);
+    pixel.blue = std::clamp(new_blue, 0, 255);
+    return pixel;
+}
+
+// Changes the saturation of a pixel. Increases or decreases the pixel's RGB values based on their distance from the average.
+Pixel ChangePixelSaturation(Pixel pixel, float saturation) {
+    int average = (pixel.red + pixel.green + pixel.blue) / 3;
+    if (pixel.red > average)
+        pixel.red = std::clamp(static_cast<int>((pixel.red - average) * saturation + average), 0, 255);
+    if (pixel.green > average)
+        pixel.green = std::clamp(static_cast<int>((pixel.green - average) * saturation + average), 0, 255);
+    if (pixel.blue > average)
+        pixel.blue = std::clamp(static_cast<int>((pixel.blue - average) * saturation + average), 0, 255);
+    return pixel;
+}
+
+// Changes the contrast of a pixel. Stretches or compresses the pixel's RGB values around the midpoint (128).
+Pixel ChangePixelContrast(Pixel pixel, float contrast) {
+    pixel.red = std::clamp(static_cast<int>(128 + (pixel.red - 128) * contrast), 0, 255);
+    pixel.green = std::clamp(static_cast<int>(128 + (pixel.green - 128) * contrast), 0, 255);
+    pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
+    return pixel;
+}

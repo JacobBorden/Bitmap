@@ -122,8 +122,8 @@ void test_ApplyBoxBlur() {
     }
     Bitmap::File blurred_uniform_bmp = ApplyBoxBlur(uniform_bmp, 1);
     ASSERT_EQUALS(true, blurred_uniform_bmp.IsValid(), "BoxBlur Uniform: Output valid");
-    ASSERT_EQUALS(uniform_bmp.bitmapInfo.bmiHeader.biWidth, blurred_uniform_bmp.bitmapInfo.bmiHeader.biWidth, "BoxBlur Uniform: Width same");
-    ASSERT_EQUALS(uniform_bmp.bitmapInfo.bmiHeader.biHeight, blurred_uniform_bmp.bitmapInfo.bmiHeader.biHeight, "BoxBlur Uniform: Height same");
+    ASSERT_EQUALS(uniform_bmp.bitmapInfoHeader.biWidth, blurred_uniform_bmp.bitmapInfoHeader.biWidth, "BoxBlur Uniform: Width same");
+    ASSERT_EQUALS(uniform_bmp.bitmapInfoHeader.biHeight, blurred_uniform_bmp.bitmapInfoHeader.biHeight, "BoxBlur Uniform: Height same");
 
     Matrix::Matrix<Pixel> blurred_uniform_matrix = CreateMatrixFromBitmap(blurred_uniform_bmp);
     if (blurred_uniform_matrix.rows() > 1 && blurred_uniform_matrix.cols() > 1) { // Ensure matrix is not empty
@@ -196,8 +196,8 @@ void test_ShrinkImage() {
     int scaleFactor = 2;
     Bitmap::File shrunk_bmp = ShrinkImage(large_bmp, scaleFactor);
     ASSERT_EQUALS(true, shrunk_bmp.IsValid(), "ShrinkImage: Output valid");
-    ASSERT_EQUALS(large_bmp.bitmapInfo.bmiHeader.biWidth / scaleFactor, shrunk_bmp.bitmapInfo.bmiHeader.biWidth, "ShrinkImage: Width correct");
-    ASSERT_EQUALS(large_bmp.bitmapInfo.bmiHeader.biHeight / scaleFactor, shrunk_bmp.bitmapInfo.bmiHeader.biHeight, "ShrinkImage: Height correct");
+    ASSERT_EQUALS(large_bmp.bitmapInfoHeader.biWidth / scaleFactor, shrunk_bmp.bitmapInfoHeader.biWidth, "ShrinkImage: Width correct");
+    ASSERT_EQUALS(large_bmp.bitmapInfoHeader.biHeight / scaleFactor, shrunk_bmp.bitmapInfoHeader.biHeight, "ShrinkImage: Height correct");
     
     Matrix::Matrix<Pixel> shrunk_matrix = CreateMatrixFromBitmap(shrunk_bmp);
     // Verifying pixel at (0,0) of the shrunk image.
@@ -237,8 +237,8 @@ void test_RotateImage() { // Specifically for RotateImageCounterClockwise
 
     Bitmap::File rotated_bmp = RotateImageCounterClockwise(rect_bmp);
     ASSERT_EQUALS(true, rotated_bmp.IsValid(), "RotateImageCCW: Output valid");
-    ASSERT_EQUALS(rect_bmp.bitmapInfo.bmiHeader.biHeight, rotated_bmp.bitmapInfo.bmiHeader.biWidth, "RotateImageCCW: Width is old height (2)"); // Original height was 2
-    ASSERT_EQUALS(rect_bmp.bitmapInfo.bmiHeader.biWidth, rotated_bmp.bitmapInfo.bmiHeader.biHeight, "RotateImageCCW: Height is old width (3)"); // Original width was 3
+    ASSERT_EQUALS(rect_bmp.bitmapInfoHeader.biHeight, rotated_bmp.bitmapInfoHeader.biWidth, "RotateImageCCW: Width is old height (2)"); // Original height was 2
+    ASSERT_EQUALS(rect_bmp.bitmapInfoHeader.biWidth, rotated_bmp.bitmapInfoHeader.biHeight, "RotateImageCCW: Height is old width (3)"); // Original width was 3
     
     Matrix::Matrix<Pixel> rotated_matrix = CreateMatrixFromBitmap(rotated_bmp);
     // Original imageMatrix[i][j]
@@ -279,20 +279,20 @@ void test_OtherImageFunctions_Placeholders() {
     // RotateImageClockwise
     Bitmap::File rotated_cw_bmp = RotateImageClockwise(base_bmp);
     ASSERT_EQUALS(true, rotated_cw_bmp.IsValid(), "RotateCW: Output valid");
-    ASSERT_EQUALS(base_bmp.bitmapInfo.bmiHeader.biHeight, rotated_cw_bmp.bitmapInfo.bmiHeader.biWidth, "RotateCW: Width is old height");
-    ASSERT_EQUALS(base_bmp.bitmapInfo.bmiHeader.biWidth, rotated_cw_bmp.bitmapInfo.bmiHeader.biHeight, "RotateCW: Height is old width");
+    ASSERT_EQUALS(base_bmp.bitmapInfoHeader.biHeight, rotated_cw_bmp.bitmapInfoHeader.biWidth, "RotateCW: Width is old height");
+    ASSERT_EQUALS(base_bmp.bitmapInfoHeader.biWidth, rotated_cw_bmp.bitmapInfoHeader.biHeight, "RotateCW: Height is old width");
 
     // MirrorImage
     Bitmap::File mirrored_bmp = MirrorImage(base_bmp);
     ASSERT_EQUALS(true, mirrored_bmp.IsValid(), "MirrorImage: Output valid");
-    ASSERT_EQUALS(base_bmp.bitmapInfo.bmiHeader.biWidth, mirrored_bmp.bitmapInfo.bmiHeader.biWidth, "MirrorImage: Width same");
-    ASSERT_EQUALS(base_bmp.bitmapInfo.bmiHeader.biHeight, mirrored_bmp.bitmapInfo.bmiHeader.biHeight, "MirrorImage: Height same");
+    ASSERT_EQUALS(base_bmp.bitmapInfoHeader.biWidth, mirrored_bmp.bitmapInfoHeader.biWidth, "MirrorImage: Width same");
+    ASSERT_EQUALS(base_bmp.bitmapInfoHeader.biHeight, mirrored_bmp.bitmapInfoHeader.biHeight, "MirrorImage: Height same");
 
     // FlipImage
     Bitmap::File flipped_bmp = FlipImage(base_bmp);
     ASSERT_EQUALS(true, flipped_bmp.IsValid(), "FlipImage: Output valid");
-    ASSERT_EQUALS(base_bmp.bitmapInfo.bmiHeader.biWidth, flipped_bmp.bitmapInfo.bmiHeader.biWidth, "FlipImage: Width same");
-    ASSERT_EQUALS(base_bmp.bitmapInfo.bmiHeader.biHeight, flipped_bmp.bitmapInfo.bmiHeader.biHeight, "FlipImage: Height same");
+    ASSERT_EQUALS(base_bmp.bitmapInfoHeader.biWidth, flipped_bmp.bitmapInfoHeader.biWidth, "FlipImage: Width same");
+    ASSERT_EQUALS(base_bmp.bitmapInfoHeader.biHeight, flipped_bmp.bitmapInfoHeader.biHeight, "FlipImage: Height same");
 
     // GreyscaleImage
     Bitmap::File grey_bmp = GreyscaleImage(base_bmp);
