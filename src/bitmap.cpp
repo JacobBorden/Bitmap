@@ -3,6 +3,11 @@
 #include <algorithm> // For std::min and std::max, used in ApplyBoxBlur and color adjustments.
 #include <vector>    // For std::vector, used by Matrix class and underlying bitmap data.
 
+// Define BI_RGB as 0 if not already defined, to ensure cross-platform compatibility for bitmap compression type.
+#ifndef BI_RGB
+#define BI_RGB 0
+#endif
+
 // Captures a screenshot of a specified window and returns it as a Bitmap::File object.
 // This function uses Windows API calls to interact with window handles and device contexts.
 #ifdef _WIN32
