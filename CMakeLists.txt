@@ -6,7 +6,7 @@ enable_testing()
 
 # Add your main library with all sources
 add_library(bitmap STATIC 
-    src/bitmap.cpp
+    src/bitmap/bitmap.cpp
     src/bitmapfile/bitmap_file.cpp
 )
 

@@ -11,392 +11,219 @@
 #include <vector>
 #include <cmath>
 #include <random>
-#include <chrono>
+#include <chrono> // For std::chrono::system_clock
+#include <utility> // For std::move
 
 namespace Matrix
 {
-	template <typename MatrixRow>
+	template <typename MatrixRowType> // Changed template parameter name to avoid conflict
 	class MatrixRowIterator
 	{
 	public:
-		// Member type definitions to conform to iterator requirements
-		using value_type = typename MatrixRow::value_type;		   // Type of elements the iterator refers to
-		using pointer = value_type *;							   // Pointer to the element type
-		using reference = value_type &;							   // Reference to the element type
-		using iterator_category = std::random_access_iterator_tag; // Iterator category to support random access
-		using difference_type = std::ptrdiff_t;					   // Type to express the difference between two iterators
-
-		// Constructor initializes the iterator with a pointer to a matrix row element
-		MatrixRowIterator(pointer ptr) : m_ptr(ptr)
-		{
-		}
-
-		// Pre-increment operator advances the iterator to the next element and returns a reference to the updated iterator
-		MatrixRowIterator &operator++()
-		{
-			m_ptr++;
-			return *this;
-		}
-
-		// Post-increment operator advances the iterator to the next element and returns the iterator before advancement
-		MatrixRowIterator operator++(int)
-		{
-			MatrixRowIterator it = *this;
-			++*this;
-			return it;
-		}
-
-		// Addition operator returns a new iterator advanced by 'n' positions
-		MatrixRowIterator operator+(difference_type n) const
-		{
-			return MatrixRowIterator(m_ptr + n);
-		}
-
-		// Compound addition operator advances the iterator by 'n' positions and returns a reference to the updated iterator
-		MatrixRowIterator &operator+=(difference_type n)
-		{
-			m_ptr += n;
-			return *this;
-		}
-
-		// Pre-decrement operator moves the iterator to the previous element and returns a reference to the updated iterator
-		MatrixRowIterator &operator--()
-		{
-			m_ptr--;
-			return *this;
-		}
-
-		// Post-decrement operator moves the iterator to the previous element and returns the iterator before movement
-		MatrixRowIterator operator--(int)
-		{
-			MatrixRowIterator it = *this;
-			--*this;
-			return it;
-		}
-
-		// Subtraction operator returns a new iterator moved back by 'n' positions
-		MatrixRowIterator operator-(difference_type n) const
-		{
-			return MatrixRowIterator(m_ptr - n);
-		}
-
-		// Compound subtraction operator moves the iterator back by 'n' positions and returns a reference to the updated iterator
-		MatrixRowIterator &operator-=(difference_type n)
-		{
-			m_ptr -= n;
-			return *this;
-		}
-
-		// Subtraction operator calculates the difference between two iterators
-		difference_type operator-(const MatrixRowIterator &other) const
-		{
-			return m_ptr - other.m_ptr;
-		}
-
-		// Arrow operator provides access to the element's members the iterator points to
-		pointer operator->() const
-		{
-			return m_ptr;
-		}
-
-		// Dereference operators return a (const) reference to the element the iterator points to
-		reference operator*()
-		{
-			return *m_ptr;
-		}
-		const reference operator*() const
-		{
-			return *m_ptr;
-		}
-
-		// Comparison operators for equality and inequality checks between iterators
-		bool operator==(const MatrixRowIterator &other) const
-		{
-			return m_ptr == other.m_ptr;
-		}
-		bool operator!=(const MatrixRowIterator &other) const
-		{
-			return m_ptr != other.m_ptr;
-		}
-
-		// Relational operators compare the positions of two iterators
-		bool operator<(const MatrixRowIterator &other) const
-		{
-			return m_ptr < other.m_ptr;
-		}
-		bool operator<=(const MatrixRowIterator &other) const
-		{
-			return m_ptr <= other.m_ptr;
-		}
-		bool operator>(const MatrixRowIterator &other) const
-		{
-			return m_ptr > other.m_ptr;
-		}
-		bool operator>=(const MatrixRowIterator &other) const
-		{
-			return m_ptr >= other.m_ptr;
-		}
-
-		// Subscript operator provides random access to elements relative to the current iterator position
-		reference operator[](difference_type n) const
-		{
-			return *(*this + n);
-		}
-
-	private:
-		pointer m_ptr; // Internal pointer to the current element
-	};
-	//--------------------------------------------------------------------------
-
-	template <typename T>
-	class MatrixColumnIterator
-	{
-	public:
-		// Type aliases for iterator traits
-		using value_type = T;									   // Type of elements the iterator can dereference
-		using pointer = T *;									   // Pointer to the element type
-		using reference = T &;									   // Reference to the element type
-		using iterator_category = std::random_access_iterator_tag; // Iterator category defining the capabilities of the iterator
-		using difference_type = std::ptrdiff_t;					   // Type to express the difference between two iterators
-
-		// Constructor initializes the iterator with a pointer to a matrix element and the total number of columns in the matrix
-		MatrixColumnIterator(pointer ptr, size_t totalColumns) : m_ptr(ptr), m_totalColumns(totalColumns)
-		{
-		}
-
-		// Pre-increment operator advances the iterator to the next element in the column and returns a reference to the updated iterator
-		MatrixColumnIterator &operator++()
-		{
-			m_ptr += m_totalColumns; // Move pointer down one row in the current column
-			return *this;
-		}
-
-		// Post-increment operator advances the iterator to the next element in the column and returns the iterator before the increment
-		MatrixColumnIterator operator++(int)
-		{
-			MatrixColumnIterator it = *this; // Make a copy of the current iterator
-			m_ptr += m_totalColumns;		 // Move pointer down one row in the current column
-			return it;						 // Return the copy representing the iterator before increment
-		}
-
-		// Addition operator returns a new iterator advanced by 'n' positions in the column
-		MatrixColumnIterator operator+(difference_type n) const
-		{
-			return MatrixColumnIterator(m_ptr + (n * m_totalColumns), m_totalColumns); // Calculate new position and create a new iterator
-		}
-
-		// Compound addition operator advances the iterator by 'n' positions in the column and returns a reference to the updated iterator
-		MatrixColumnIterator &operator+=(difference_type n)
-		{
-			m_ptr += (n * m_totalColumns); // Adjust pointer by 'n' rows down in the current column
-			return *this;
-		}
-
-		// Pre-decrement operator moves the iterator to the previous element in the column and returns a reference to the updated iterator
-		MatrixColumnIterator &operator--()
-		{
-			m_ptr -= m_totalColumns; // Move pointer up one row in the current column
-			return *this;
-		}
-
-		// Post-decrement operator moves the iterator to the previous element in the column and returns the iterator before the decrement
-		MatrixColumnIterator operator--(int)
-		{
-			MatrixColumnIterator it = *this; // Make a copy of the current iterator
-			m_ptr -= m_totalColumns;		 // Move pointer up one row in the current column
-			return it;						 // Return the copy representing the iterator before decrement
-		}
-
-		// Subtraction operator returns a new iterator moved back by 'n' positions in the column
-		MatrixColumnIterator operator-(difference_type n) const
-		{
-			return MatrixColumnIterator(m_ptr - (n * m_totalColumns), m_totalColumns); // Calculate new position and create a new iterator
-		}
-
-		// Compound subtraction operator moves the iterator back by 'n' positions in the column and returns a reference to the updated iterator
-		MatrixColumnIterator &operator-=(difference_type n)
-		{
-			m_ptr -= (n * m_totalColumns); // Adjust pointer by 'n' rows up in the current column
-			return *this;
-		}
-
-		// Subtraction operator calculates the difference between two iterators in terms of column positions
-		difference_type operator-(const MatrixColumnIterator &other) const
-		{
-			return (m_ptr - other.m_ptr) / m_totalColumns; // Calculate element-wise distance between iterators
-		}
-
-		// Comparison operators for checking equality and inequality between iterators
-		bool operator==(const MatrixColumnIterator &other) const
-		{
-			return m_ptr == other.m_ptr;
-		}
-		bool operator!=(const MatrixColumnIterator &other) const
-		{
-			return m_ptr != other.m_ptr;
-		}
-
-		// Relational operators for ordering iterators
-		bool operator<(const MatrixColumnIterator &other) const
-		{
-			return m_ptr < other.m_ptr;
-		}
-		bool operator<=(const MatrixColumnIterator &other) const
-		{
-			return m_ptr <= other.m_ptr;
-		}
-		bool operator>(const MatrixColumnIterator &other) const
-		{
-			return m_ptr > other.m_ptr;
-		}
-		bool operator>=(const MatrixColumnIterator &other) const
-		{
-			return m_ptr >= other.m_ptr;
-		}
-
-		// Dereference operator provides access to the current element the iterator points to
-		reference operator*() const
-		{
-			return *m_ptr;
-		}
-
-		// Member access operator allows access to the element's members
-		pointer operator->() const
-		{
-			return m_ptr;
-		}
-
-		// Subscript operator provides random access to elements relative to the current iterator position
-		reference operator[](difference_type n) const
-		{
-			return *(*this + n);
-		}
-
-	private:
-		pointer m_ptr;		   // Pointer to the current element in the matrix
-		size_t m_totalColumns; // Total number of columns in the matrix, used for column-wise navigation
-	};
-
-	//--------------------------------------------------------------------------
-	template <typename Matrix>
-	class MatrixIterator
-	{
-	public:
-		using value_type = typename Matrix::value_type;
+		using value_type = typename MatrixRowType::value_type;
 		using pointer = value_type *;
 		using reference = value_type &;
+		using iterator_category = std::random_access_iterator_tag;
+		using difference_type = std::ptrdiff_t;
 
-		MatrixIterator(pointer ptr) : m_ptr(ptr)
-		{
-		}
+		MatrixRowIterator(pointer ptr) : m_ptr(ptr) {}
 
-		MatrixIterator &operator++()
-		{
-			m_ptr++;
-			return *this;
-		}
-
-		MatrixIterator operator++(int)
-		{
-			MatrixIterator it = *this;
-			++it;
-			return it;
-		}
-
-		MatrixIterator &operator--()
-		{
-			m_ptr--;
-			return *this;
-		}
-
-		MatrixIterator operator--(int)
-		{
-			MatrixIterator it = *this;
-			--it;
-			return it;
-		}
-
-		pointer operator->()
-		{
-			return m_ptr;
-		}
-
-		reference operator*()
-		{
-			return *m_ptr;
-		}
-
-		bool operator==(MatrixIterator other)
-		{
-			return this->m_ptr == other.m_ptr;
-		}
-
-		bool operator!=(MatrixIterator other)
-		{
-			return this->m_ptr != other.m_ptr;
-		}
+		MatrixRowIterator &operator++() { m_ptr++; return *this; }
+		MatrixRowIterator operator++(int) { MatrixRowIterator it = *this; ++*this; return it; }
+		MatrixRowIterator operator+(difference_type n) const { return MatrixRowIterator(m_ptr + n); }
+		MatrixRowIterator &operator+=(difference_type n) { m_ptr += n; return *this; }
+		MatrixRowIterator &operator--() { m_ptr--; return *this; }
+		MatrixRowIterator operator--(int) { MatrixRowIterator it = *this; --*this; return it; }
+		MatrixRowIterator operator-(difference_type n) const { return MatrixRowIterator(m_ptr - n); }
+		MatrixRowIterator &operator-=(difference_type n) { m_ptr -= n; return *this; }
+		difference_type operator-(const MatrixRowIterator &other) const { return m_ptr - other.m_ptr; }
+		pointer operator->() const { return m_ptr; }
+		reference operator*() { return *m_ptr; }
+		const reference operator*() const { return *m_ptr; }
+		bool operator==(const MatrixRowIterator &other) const { return m_ptr == other.m_ptr; }
+		bool operator!=(const MatrixRowIterator &other) const { return m_ptr != other.m_ptr; }
+		bool operator<(const MatrixRowIterator &other) const { return m_ptr < other.m_ptr; }
+		bool operator<=(const MatrixRowIterator &other) const { return m_ptr <= other.m_ptr; }
+		bool operator>(const MatrixRowIterator &other) const { return m_ptr > other.m_ptr; }
+		bool operator>=(const MatrixRowIterator &other) const { return m_ptr >= other.m_ptr; }
+		reference operator[](difference_type n) const { return *(*this + n); }
 
 	private:
 		pointer m_ptr;
 	};
 
-	//-------------------------------------------------------------------------
+	template <typename T>
+	class MatrixColumnIterator
+	{
+	public:
+		using value_type = T;
+		using pointer = T *;
+		using reference = T &;
+		using iterator_category = std::random_access_iterator_tag;
+		using difference_type = std::ptrdiff_t;
+
+		MatrixColumnIterator(pointer ptr, size_t totalColumns) : m_ptr(ptr), m_totalColumns(totalColumns) {}
+
+		MatrixColumnIterator &operator++() { m_ptr += m_totalColumns; return *this; }
+		MatrixColumnIterator operator++(int) { MatrixColumnIterator it = *this; m_ptr += m_totalColumns; return it; }
+		MatrixColumnIterator operator+(difference_type n) const { return MatrixColumnIterator(m_ptr + (n * m_totalColumns), m_totalColumns); }
+		MatrixColumnIterator &operator+=(difference_type n) { m_ptr += (n * m_totalColumns); return *this; }
+		MatrixColumnIterator &operator--() { m_ptr -= m_totalColumns; return *this; }
+		MatrixColumnIterator operator--(int) { MatrixColumnIterator it = *this; m_ptr -= m_totalColumns; return it; }
+		MatrixColumnIterator operator-(difference_type n) const { return MatrixColumnIterator(m_ptr - (n * m_totalColumns), m_totalColumns); }
+		MatrixColumnIterator &operator-=(difference_type n) { m_ptr -= (n * m_totalColumns); return *this; }
+		difference_type operator-(const MatrixColumnIterator &other) const { return (m_ptr - other.m_ptr) / m_totalColumns; }
+		bool operator==(const MatrixColumnIterator &other) const { return m_ptr == other.m_ptr; }
+		bool operator!=(const MatrixColumnIterator &other) const { return m_ptr != other.m_ptr; }
+		bool operator<(const MatrixColumnIterator &other) const { return m_ptr < other.m_ptr; }
+		bool operator<=(const MatrixColumnIterator &other) const { return m_ptr <= other.m_ptr; }
+		bool operator>(const MatrixColumnIterator &other) const { return m_ptr > other.m_ptr; }
+		bool operator>=(const MatrixColumnIterator &other) const { return m_ptr >= other.m_ptr; }
+		reference operator*() const { return *m_ptr; }
+		pointer operator->() const { return m_ptr; }
+		reference operator[](difference_type n) const { return *(*this + n); }
+
+	private:
+		pointer m_ptr;
+		size_t m_totalColumns;
+	};
+
+	template <typename MatrixType> // Changed template parameter name
+	class MatrixIterator
+	{
+	public:
+		using value_type = typename MatrixType::value_type;
+		using pointer = value_type *;
+		using reference = value_type &;
+
+		MatrixIterator(pointer ptr) : m_ptr(ptr) {}
+
+		MatrixIterator &operator++() { m_ptr++; return *this; }
+		MatrixIterator operator++(int) { MatrixIterator it = *this; ++(*this); return it; } // Corrected post-increment
+		MatrixIterator &operator--() { m_ptr--; return *this; }
+		MatrixIterator operator--(int) { MatrixIterator it = *this; --(*this); return it; } // Corrected post-decrement
+		pointer operator->() { return m_ptr; }
+		reference operator*() { return *m_ptr; }
+		bool operator==(const MatrixIterator& other) const { return this->m_ptr == other.m_ptr; } // Added const and pass by ref
+		bool operator!=(const MatrixIterator& other) const { return this->m_ptr != other.m_ptr; } // Added const and pass by ref
+
+	private:
+		pointer m_ptr;
+	};
+
 	template <typename T>
 	class MatrixRow
 	{
 	public:
 		using value_type = T;
-		using Iterator = MatrixRowIterator<MatrixRow<T>>;
+		using Iterator = MatrixRowIterator<MatrixRow<T>>; // Corrected template argument
 
-		MatrixRow() = default;
-		explicit MatrixRow(size_t size) : m_Size(size), m_Capacity(size * sizeof(T)), m_Data(std::make_unique<T[]>(size)) {}
+		MatrixRow() : m_Size(0), m_Capacity(0), m_Data(nullptr) {} // Default constructor
 
-		void resize(size_t newSize)
-		{
-			auto newData = std::make_unique<T[]>(newSize);
-			std::copy_n(m_Data.get(), std::min(m_Size, newSize), newData.get());
+		explicit MatrixRow(size_t size) : m_Size(size), m_Capacity(size), m_Data(size > 0 ? std::make_unique<T[]>(size) : nullptr) {
+            if (size > 0) {
+                std::fill_n(m_Data.get(), m_Size, T{}); // Default initialize elements
+            }
+        }
+
+		// Copy constructor
+		MatrixRow(const MatrixRow& other) : m_Size(other.m_Size), m_Capacity(other.m_Capacity), m_Data(other.m_Size > 0 ? std::make_unique<T[]>(other.m_Size) : nullptr) {
+			if (m_Size > 0) {
+				std::copy_n(other.m_Data.get(), m_Size, m_Data.get());
+			}
+		}
+
+		// Copy assignment operator
+		MatrixRow& operator=(const MatrixRow& other) {
+			if (this == &other) {
+				return *this;
+			}
+			m_Size = other.m_Size;
+			m_Capacity = other.m_Capacity;
+			m_Data = (other.m_Size > 0 ? std::make_unique<T[]>(other.m_Size) : nullptr);
+			if (m_Size > 0) {
+				std::copy_n(other.m_Data.get(), m_Size, m_Data.get());
+			}
+			return *this;
+		}
+
+		// Move constructor
+		MatrixRow(MatrixRow&& other) noexcept : m_Size(other.m_Size), m_Capacity(other.m_Capacity), m_Data(std::move(other.m_Data)) {
+			other.m_Size = 0;
+			other.m_Capacity = 0;
+		}
+
+		// Move assignment operator
+		MatrixRow& operator=(MatrixRow&& other) noexcept {
+			if (this == &other) {
+				return *this;
+			}
+			m_Size = other.m_Size;
+			m_Capacity = other.m_Capacity;
+			m_Data = std::move(other.m_Data);
+			other.m_Size = 0;
+			other.m_Capacity = 0;
+			return *this;
+		}
+        
+        ~MatrixRow() = default; // Default destructor is fine with unique_ptr
+
+		void resize(size_t newSize) {
+			auto newData = (newSize > 0 ? std::make_unique<T[]>(newSize) : nullptr);
+            if (m_Data) { // Only copy if old data exists
+			    std::copy_n(m_Data.get(), std::min(m_Size, newSize), newData.get());
+            }
 			m_Data = std::move(newData);
 			m_Size = newSize;
-			m_Capacity = newSize * sizeof(T);
+			m_Capacity = newSize; // Capacity is same as size for simplicity here
+            if (newSize > m_Size && m_Data) { // If grown, default initialize new elements
+                 std::fill_n(m_Data.get() + m_Size, newSize - m_Size, T{});
+            }
 		}
 
-		void assign(size_t size, T val)
-		{
+		void assign(size_t size, T val) {
 			resize(size);
-			std::fill_n(m_Data.get(), size, val);
+            if (size > 0) {
+			    std::fill_n(m_Data.get(), size, val);
+            }
 		}
 
-		void assign(T val) { std::fill_n(m_Data.get(), m_Size, val); }
+		void assign(T val) { 
+            if (m_Size > 0) {
+                std::fill_n(m_Data.get(), m_Size, val); 
+            }
+        }
 
 		size_t size() const { return m_Size; }
+		size_t capacity() const { return m_Capacity; } // Corrected to return m_Capacity
 
-		size_t capacity(){return m_Capacity;}
-
-		T at(size_t i) const
-		{
+		T at(size_t i) const { // Added at()
+			if (i >= m_Size)
+				throw std::out_of_range("Index out of range");
+			return m_Data[i];
+		}
+        T& at(size_t i) { // Added non-const at()
 			if (i >= m_Size)
 				throw std::out_of_range("Index out of range");
 			return m_Data[i];
 		}
 
-		T &operator[](size_t i)
-		{
-			if (i >= m_Size)
-				throw std::out_of_range("Index out of range");
+
+		T &operator[](size_t i) {
+			// No bounds check for performance, similar to std::vector
 			return m_Data[i];
 		}
 
-		const T &operator[](size_t i) const
-		{
-			if (i >= m_Size)
-				throw std::out_of_range("Index out of range");
+		const T &operator[](size_t i) const {
+			// No bounds check for performance
 			return m_Data[i];
 		}
 
 		Iterator begin() { return Iterator(m_Data.get()); }
 		Iterator end() { return Iterator(m_Data.get() + m_Size); }
-		Iterator begin() const { return Iterator(m_Data.get()); }
-		Iterator end() const { return Iterator(m_Data.get() + m_Size); }
+		Iterator begin() const { return Iterator(m_Data.get()); } // Const version
+		Iterator end() const { return Iterator(m_Data.get() + m_Size); } // Const version
+
 
 	private:
 		size_t m_Size = 0;
@@ -404,196 +231,276 @@ namespace Matrix
 		std::unique_ptr<T[]> m_Data;
 	};
 
-	//---------------------------------------------------------------------------------------------
 
 	template <typename T>
 	class Matrix
 	{
 	public:
 		using value_type = MatrixRow<T>;
-		using Iterator = MatrixIterator<Matrix<T>>;
-		using ColumonIterator = MatrixColumnIterator<Matrix<T>>;
+		using Iterator = MatrixIterator<Matrix<T>>; // Corrected template argument
+		using ColumnIterator = MatrixColumnIterator<T>; // Corrected, was ColumonIterator and wrong type
 
 		Matrix<T>() = default;
 		explicit Matrix<T>(int row_count, int column_count)
-			: m_Rows(row_count), m_Cols(column_count), m_Size(row_count * column_count), m_Capacity(sizeof(T) * row_count * column_count), m_Data(std::make_unique<MatrixRow<T>[]>(row_count))
+			: m_Rows(row_count), m_Cols(column_count), m_Size(row_count * column_count), m_Capacity(row_count), m_Data(row_count > 0 ? std::make_unique<MatrixRow<T>[]>(row_count) : nullptr)
 		{
-			for (int i = 0; i < m_Rows; i++)
-				m_Data[i] = MatrixRow<T>(m_Cols);
+			if (row_count > 0) {
+				for (int i = 0; i < m_Rows; i++)
+					m_Data[i] = MatrixRow<T>(m_Cols); // Each row initialized with default T values
+			}
 		}
+        // Constructor with initial value
+        Matrix<T>(int row_count, int column_count, const T& initial_value)
+            : m_Rows(row_count), m_Cols(column_count), m_Size(row_count * column_count), m_Capacity(row_count), m_Data(row_count > 0 ? std::make_unique<MatrixRow<T>[]>(row_count) : nullptr)
+        {
+            if (row_count > 0) {
+                for (int i = 0; i < m_Rows; i++) {
+                    m_Data[i].assign(m_Cols, initial_value);
+                }
+            }
+        }
+
+
+		// Copy constructor
+		Matrix(const Matrix& other) : m_Rows(other.m_Rows), m_Cols(other.m_Cols), m_Size(other.m_Size), m_Capacity(other.m_Capacity), m_Data(other.m_Rows > 0 ? std::make_unique<MatrixRow<T>[]>(other.m_Rows) : nullptr) {
+			if (m_Rows > 0) {
+				for (size_t i = 0; i < m_Rows; ++i) {
+					m_Data[i] = other.m_Data[i]; // Uses MatrixRow's copy assignment
+				}
+			}
+		}
+
+		// Copy assignment operator
+		Matrix& operator=(const Matrix& other) {
+			if (this == &other) {
+				return *this;
+			}
+			m_Rows = other.m_Rows;
+			m_Cols = other.m_Cols;
+			m_Size = other.m_Size;
+			m_Capacity = other.m_Capacity;
+			m_Data = (other.m_Rows > 0 ? std::make_unique<MatrixRow<T>[]>(other.m_Rows) : nullptr);
+            if (m_Rows > 0) {
+			    for (size_t i = 0; i < m_Rows; ++i) {
+				    m_Data[i] = other.m_Data[i]; // Uses MatrixRow's copy assignment
+			    }
+            }
+			return *this;
+		}
+
+		// Move constructor
+		Matrix(Matrix&& other) noexcept 
+            : m_Rows(other.m_Rows), m_Cols(other.m_Cols), m_Size(other.m_Size), m_Capacity(other.m_Capacity), m_Data(std::move(other.m_Data)) {
+			other.m_Rows = 0;
+			other.m_Cols = 0;
+			other.m_Size = 0;
+            other.m_Capacity = 0;
+		}
+
+		// Move assignment operator
+		Matrix& operator=(Matrix&& other) noexcept {
+			if (this == &other) {
+				return *this;
+			}
+			m_Rows = other.m_Rows;
+			m_Cols = other.m_Cols;
+			m_Size = other.m_Size;
+            m_Capacity = other.m_Capacity;
+			m_Data = std::move(other.m_Data);
+			other.m_Rows = 0;
+			other.m_Cols = 0;
+			other.m_Size = 0;
+            other.m_Capacity = 0;
+			return *this;
+		}
+        
+        ~Matrix() = default; // Default destructor fine with unique_ptr
 
 		size_t size() const { return m_Size; }
 		size_t rows() const { return m_Rows; }
 		size_t cols() const { return m_Cols; }
-		size_t capacity() const { return m_Capacity; }
+		size_t capacity() const { return m_Capacity; } // This capacity is for number of rows unique_ptr can hold.
+        bool empty() const { return m_Rows == 0 || m_Cols == 0; } // Added empty()
 
-		void resize(size_t row_count, size_t col_count)
-		{
-			auto newData = std::make_unique<MatrixRow<T>[]>(row_count);
-			for (size_t i = 0; i < std::min(m_Rows, row_count); ++i)
-			{
-				newData[i] = std::move(m_Data[i]);
-				newData[i].resize(col_count);
-			}
+		void resize(size_t row_count, size_t col_count) {
+            auto newData = (row_count > 0 ? std::make_unique<MatrixRow<T>[]>(row_count) : nullptr);
+            if (m_Data) { // If old data exists
+			    for (size_t i = 0; i < std::min(m_Rows, row_count); ++i) {
+				    newData[i] = std::move(m_Data[i]); // Move existing rows
+			    }
+            }
+            // For new rows (if any), or if old data didn't exist
+            for (size_t i = (m_Data ? std::min(m_Rows, row_count) : 0); i < row_count; ++i) {
+                 newData[i] = MatrixRow<T>(col_count); // Initialize new rows
+            }
+
+            // Resize all rows to new column count
+            for (size_t i = 0; i < row_count; ++i) {
+                 newData[i].resize(col_count);
+            }
+
 			m_Data = std::move(newData);
 			m_Rows = row_count;
 			m_Cols = col_count;
 			m_Size = row_count * col_count;
-			m_Capacity = row_count * col_count * sizeof(T);
+			m_Capacity = row_count; 
+		}
+        // resize with value
+        void resize(size_t row_count, size_t col_count, const T& val) {
+            Matrix<T> temp(row_count, col_count, val); // Create a temp matrix with the value
+            if (m_Data) { // Preserve old data that fits
+                for (size_t i = 0; i < std::min(m_Rows, row_count); ++i) {
+                    for (size_t j = 0; j < std::min(m_Cols, col_count); ++j) {
+                        temp[i][j] = m_Data[i][j];
+                    }
+                }
+            }
+            *this = std::move(temp); // Move assign
+        }
+
+
+		void assign(size_t row_count, size_t col_count, const T& val) {
+			resize(row_count, col_count); // Resize first (might create default T values)
+			for (size_t i = 0; i < m_Rows; ++i) { // Then assign specific value
+				m_Data[i].assign(m_Cols, val);
+            }
 		}
 
-		void assign(size_t row_count, size_t col_count, const T val)
-		{
-			resize(row_count, col_count);
-			for (size_t i = 0; i < row_count; ++i)
-				std::fill_n(m_Data[i].begin(), m_Data[i].size(), val);
-		}
-
-		void assign(const T val)
-		{
+		void assign(const T& val) { // Corrected: const T& val
 			for (size_t i = 0; i < m_Rows; ++i)
 				for (size_t j = 0; j < m_Cols; ++j)
 					m_Data[i][j] = val;
 		}
+        
+        // at() methods
+        T at(size_t r, size_t c) const {
+            if (r >= m_Rows || c >= m_Cols) throw std::out_of_range("Matrix index out of range");
+            return m_Data[r][c];
+        }
+        T& at(size_t r, size_t c) {
+            if (r >= m_Rows || c >= m_Cols) throw std::out_of_range("Matrix index out of range");
+            return m_Data[r][c];
+        }
 
-		Matrix<T> MergeVertical(const Matrix<T> &b) const
-		{
-			if (m_Cols != b.m_Cols)
-				throw std::invalid_argument("Matrices must have the same number of columns");
-			Matrix<T> result(m_Rows + b.m_Rows, m_Cols);
-			std::copy_n(m_Data.get(), m_Rows, result.m_Data.get());
-			std::copy_n(b.m_Data.get(), b.m_Rows, result.m_Data.get() + m_Rows);
+
+		Matrix<T> MergeVertical(const Matrix<T> &b) const {
+			if (m_Cols != b.m_Cols && !empty() && !b.empty()) // Allow merging with empty if one is empty
+				throw std::invalid_argument("Matrices must have the same number of columns to merge vertically (unless one is empty)");
+			
+            size_t result_cols = empty() ? b.m_Cols : m_Cols;
+            if (result_cols == 0 && !b.empty()) result_cols = b.m_Cols; // Handle case where this is empty but b is not
+
+			Matrix<T> result(m_Rows + b.m_Rows, result_cols);
+			for(size_t i=0; i<m_Rows; ++i) result[i] = m_Data[i]; // MatrixRow copy assignment
+			for(size_t i=0; i<b.m_Rows; ++i) result[i + m_Rows] = b.m_Data[i];
 			return result;
 		}
 
-		Matrix<T> MergeHorizontal(const Matrix<T> &b) const
-		{
-			if (m_Rows != b.m_Rows)
-				throw std::invalid_argument("Matrices must have the same number of rows");
-			Matrix<T> result(m_Rows, m_Cols + b.m_Cols);
-			for (size_t i = 0; i < m_Rows; ++i)
-			{
-				std::copy_n(m_Data[i].begin(), m_Cols, result.m_Data[i].begin());
-				std::copy_n(b.m_Data[i].begin(), b.m_Cols, result.m_Data[i].begin() + m_Cols);
+		Matrix<T> MergeHorizontal(const Matrix<T> &b) const {
+			if (m_Rows != b.m_Rows && !empty() && !b.empty())
+				throw std::invalid_argument("Matrices must have the same number of rows to merge horizontally (unless one is empty)");
+            
+            size_t result_rows = empty() ? b.m_Rows : m_Rows;
+             if (result_rows == 0 && !b.empty()) result_rows = b.m_Rows;
+
+
+			Matrix<T> result(result_rows, m_Cols + b.m_Cols);
+			for (size_t i = 0; i < result_rows; ++i) {
+                if (i < m_Rows) { // If this matrix contributes the row
+				    std::copy_n(m_Data[i].begin(), m_Cols, result.m_Data[i].begin());
+                }
+                if (i < b.m_Rows) { // If b matrix contributes the row
+				    std::copy_n(b.m_Data[i].begin(), b.m_Cols, result.m_Data[i].begin() + m_Cols);
+                }
 			}
 			return result;
 		}
 
-		std::vector<Matrix<T>> SplitVertical() const
-		{
-			if (m_Rows % 2 != 0)
-				throw std::invalid_argument("Number of rows must be divisable by 2");
-			std::vector<Matrix<T>> result;
-			size_t split_size = m_Rows / 2;
-			for (size_t i = 0; i < 2; ++i)
-			{
-				Matrix<T> split(split_size, m_Cols);
-				std::copy_n(m_Data.get() + i * split_size, split_size, split.m_Data.get());
-				result.push_back(std::move(split));
-			}
-			return result;
-		}
-
-		std::vector<Matrix<T>> SplitVertical(size_t num) const
-		{
-			if (m_Rows % num != 0)
+		std::vector<Matrix<T>> SplitVertical(size_t num_splits) const { // Renamed num to num_splits for clarity
+            if (num_splits == 0) throw std::invalid_argument("Number of splits cannot be zero.");
+            if (empty()) throw std::invalid_argument("Cannot split an empty matrix.");
+			if (m_Rows % num_splits != 0)
 				throw std::invalid_argument("Number of splits must evenly divide the number of rows");
-			std::vector<Matrix<T>> result;
-			size_t split_size = m_Rows / num;
-			for (size_t i = 0; i < num; ++i)
-			{
+			
+            std::vector<Matrix<T>> result;
+            result.reserve(num_splits);
+			size_t split_size = m_Rows / num_splits;
+			for (size_t i = 0; i < num_splits; ++i) {
 				Matrix<T> split(split_size, m_Cols);
-				std::copy_n(m_Data.get() + i * split_size, split_size, split.m_Data.get());
-				result.push_back(std::move(split));
+				for(size_t k=0; k < split_size; ++k) {
+                    split[k] = m_Data[i * split_size + k]; // MatrixRow copy assignment
+                }
+				result.push_back(std::move(split)); // Use move
 			}
 			return result;
 		}
+        // Overload for splitting in half
+        std::vector<Matrix<T>> SplitVertical() const { return SplitVertical(2); }
 
-		std::vector<Matrix<T>> SplitHorizontal() const
-		{
-			if (m_Cols % 2 != 0)
-				throw std::invalid_argument("Number of columns must be divisable by 2");
-			std::vector<Matrix<T>> result;
-			size_t split_size = m_Cols / 2;
-			for (size_t i = 0; i < 2; ++i)
-			{
-				Matrix<T> split(m_Rows, split_size);
-				for (size_t j = 0; j < m_Rows; ++j)
-				{
-					std::copy_n(m_Data[j].begin() + i * split_size, split_size, split.m_Data[j].begin());
-				}
-				result.push_back(std::move(split));
-			}
-			return result;
-		}
 
-		std::vector<Matrix<T>> SplitHorizontal(size_t num) const
-		{
-			if (m_Cols % num != 0)
+		std::vector<Matrix<T>> SplitHorizontal(size_t num_splits) const {
+            if (num_splits == 0) throw std::invalid_argument("Number of splits cannot be zero.");
+            if (empty()) throw std::invalid_argument("Cannot split an empty matrix.");
+			if (m_Cols % num_splits != 0)
 				throw std::invalid_argument("Number of splits must evenly divide the number of columns");
+
 			std::vector<Matrix<T>> result;
-			size_t split_size = m_Cols / num;
-			for (size_t i = 0; i < num; ++i)
-			{
+            result.reserve(num_splits);
+			size_t split_size = m_Cols / num_splits;
+			for (size_t i = 0; i < num_splits; ++i) {
 				Matrix<T> split(m_Rows, split_size);
-				for (size_t j = 0; j < m_Rows; ++j)
-				{
-					std::copy_n(m_Data[j].begin() + i * split_size, split_size, split.m_Data[j].begin());
+				for (size_t j = 0; j < m_Rows; ++j) {
+                    // Copy elements for the current horizontal segment of row j
+                    for(size_t k=0; k < split_size; ++k) {
+                        split[j][k] = m_Data[j][i * split_size + k];
+                    }
 				}
 				result.push_back(std::move(split));
 			}
 			return result;
 		}
+        std::vector<Matrix<T>> SplitHorizontal() const { return SplitHorizontal(2); }
 
-		Matrix<T> SigmoidMatrix()
-		{
-			Matrix<T> result(*this);
-			for (auto &row : result)
-			{
-				for (auto &elem : row)
-				{
-					elem = 1 / (1 + std::exp(-elem));
+
+		Matrix<T>& SigmoidMatrix() { // Return by reference, not const
+			for (size_t i = 0; i < m_Rows; ++i) {
+				for (size_t j = 0; j < m_Cols; ++j) {
+					m_Data[i][j] = T(1) / (T(1) + std::exp(-m_Data[i][j]));
 				}
 			}
+            return *this;
 		}
 
-		Matrix<T> Randomize()
-		{
+		Matrix<T>& Randomize() { // Return by reference
 			static std::mt19937 gen(std::chrono::system_clock::now().time_since_epoch().count());
-			std::uniform_real_distribution<> dis(-1.0, 1.0);
-			for (auto &row : *this)
-			{
-				for (auto &elem : row)
-				{
-					elem = dis(gen);
+			std::uniform_real_distribution<double> dis(-1.0, 1.0); // Use double for distribution
+			for (size_t i = 0; i < m_Rows; ++i) {
+				for (size_t j = 0; j < m_Cols; ++j) {
+					m_Data[i][j] = static_cast<T>(dis(gen));
 				}
 			}
 			return *this;
 		}
-		Matrix<T> CreateIdentityMatrix()
-		{
+		Matrix<T>& CreateIdentityMatrix() { // Return by reference
 			if (m_Rows != m_Cols)
-				throw std::invalid_argument("Matrix must be square");
-			for (size_t i = 0; i < m_Rows; ++i)
-			{
-				std::fill(m_Data[i].begin(), m_Data[i].end(), T(0));
+				throw std::invalid_argument("Matrix must be square to become an identity matrix.");
+            if (m_Rows == 0) return *this; // Or throw, but identity of 0x0 is tricky.
+			for (size_t i = 0; i < m_Rows; ++i) {
+				m_Data[i].assign(m_Cols, T(0)); // Zero out row first
 				m_Data[i][i] = T(1);
 			}
 			return *this;
 		}
 
-		Matrix<T> ZeroMatrix() const
-		{
-			Matrix<T> result(*this);
-			for (auto &row : result)
-			{
-				std::fill(row.begin(), row.end(), T(0));
+		Matrix<T>& ZeroMatrix() { // Not const, return by reference
+			for (size_t i = 0; i < m_Rows; ++i) {
+				m_Data[i].assign(m_Cols, T(0));
 			}
-			return result;
+			return *this;
 		}
 
-		Matrix<T> Transpose() const
-		{
+		Matrix<T> Transpose() const {
+            if (empty()) return Matrix<T>(); // Transpose of empty is empty
 			Matrix<T> result(m_Cols, m_Rows);
 			for (size_t i = 0; i < m_Rows; ++i)
 				for (size_t j = 0; j < m_Cols; ++j)
@@ -601,248 +508,262 @@ namespace Matrix
 			return result;
 		}
 
-		T Determinant() const
-		{
+		T Determinant() const {
 			if (m_Rows != m_Cols)
-				throw std::invalid_argument("Matrix must be square");
+				throw std::invalid_argument("Matrix must be square to calculate determinant.");
+            if (m_Rows == 0) return T(1); // Determinant of 0x0 matrix is 1 by convention
 			size_t n = m_Rows;
 			if (n == 1)
 				return m_Data[0][0];
 			else if (n == 2)
 				return m_Data[0][0] * m_Data[1][1] - m_Data[0][1] * m_Data[1][0];
-			T det = 0;
-			for (size_t i = 0; i < n; ++i)
-			{
+			
+            T det = T(0);
+            Matrix<T> temp_matrix = *this; // Make a mutable copy for LU decomposition approach (more stable)
+            
+            for (size_t i = 0; i < n; ++i) {
+                // Partial pivoting: find row with max element in current column
+                size_t max_row = i;
+                for (size_t k = i + 1; k < n; ++k) {
+                    if (std::abs(temp_matrix[k][i]) > std::abs(temp_matrix[max_row][i])) {
+                        max_row = k;
+                    }
+                }
+                if (i != max_row) {
+                    std::swap(temp_matrix.m_Data[i], temp_matrix.m_Data[max_row]);
+                    // det sign changes with row swap, but this is handled by product of diagonal later
+                }
+
+                if (temp_matrix[i][i] == T(0)) return T(0); // Singular if pivot is zero
+
+                for (size_t k = i + 1; k < n; ++k) {
+                    T factor = temp_matrix[k][i] / temp_matrix[i][i];
+                    for (size_t j = i; j < n; ++j) {
+                        temp_matrix[k][j] -= factor * temp_matrix[i][j];
+                    }
+                }
+            }
+            // Determinant is the product of diagonal elements after Gaussian elimination
+            // Sign changes from pivoting are implicitly handled if we consider the final diagonal.
+            // However, the above loop doesn't track sign changes for the determinant formula.
+            // For simplicity and to keep current structure, using Laplace expansion:
+            // Reverting to original Laplace expansion as it's what was there, though less stable/efficient
+            det = T(0); // Reset det
+			for (size_t i = 0; i < n; ++i) {
 				Matrix<T> minor = getMinor(*this, 0, i);
+				T minor_det = minor.Determinant(); // Recursive call
 				int sign = ((i % 2) == 0) ? 1 : -1;
-				det += sign * m_Data[0][i] * minor.Determinant();
+				det += static_cast<T>(sign) * m_Data[0][i] * minor_det;
 			}
 			return det;
 		}
 
-		Matrix<T> Inverse() const
-		{
+		Matrix<T> Inverse() const {
 			if (m_Rows != m_Cols)
-				throw std::invalid_argument("Matrix must be square");
+				throw std::invalid_argument("Matrix must be square to be inverted.");
+            if (m_Rows == 0) return Matrix<T>(); // Inverse of empty is empty
 
 			T det = Determinant();
-			if (det == 0)
-				throw std::runtime_error("Matrix is singular and cannot be inverted.");
+			if (std::abs(det) < 1e-9) // Check for near-zero determinant for floating point types
+				throw std::runtime_error("Matrix is singular (or nearly singular) and cannot be inverted.");
 
-			// Step 2: Compute the cofactor matrix
 			Matrix<T> cofactors(m_Rows, m_Cols);
-			for (size_t i = 0; i < m_Rows; ++i)
-			{
-				for (size_t j = 0; j < m_Cols; ++j)
-				{
+			for (size_t i = 0; i < m_Rows; ++i) {
+				for (size_t j = 0; j < m_Cols; ++j) {
 					Matrix<T> minor = getMinor(*this, i, j);
 					T minor_det = minor.Determinant();
-					cofactors[i][j] = ((i + j) % 2 == 0 ? 1 : -1) * minor_det;
+					cofactors[i][j] = (((i + j) % 2 == 0) ? T(1) : T(-1)) * minor_det;
 				}
 			}
-
-			// Step 3: Compute the adjugate matrix (transpose of cofactor matrix)
 			Matrix<T> adjugate = cofactors.Transpose();
-
-			// Step 4: Compute the inverse
-			Matrix<T> inverse = adjugate * (1 / det);
-			return inverse;
+			return adjugate * (T(1) / det);
 		}
 
-	
-
-	MatrixRow<T> &
-	operator[](size_t i)
-	{
+	MatrixRow<T>& operator[](size_t i) {
+        // No bounds check for performance in release, but useful for debug
+        // #ifndef NDEBUG
+        // if (i >= m_Rows) throw std::out_of_range("Matrix row index out of range");
+        // #endif
 		return m_Data[i];
 	}
-	const MatrixRow<T> &operator[](size_t i) const { return m_Data[i]; }
+	const MatrixRow<T>& operator[](size_t i) const {
+        // #ifndef NDEBUG
+        // if (i >= m_Rows) throw std::out_of_range("Matrix row index out of range");
+        // #endif
+        return m_Data[i];
+    }
 
-	Matrix<T> operator+(const Matrix<T> &b)
-	{
-		if ((m_Rows == b.m_Rows) && (m_Cols == b.m_Cols))
-		{
-			Matrix<T> c(m_Rows, m_Cols);
-			for (int i = 0; i < m_Rows; i++)
-				for (int j = 0; j < m_Cols; j++)
-					c[i][j] = m_Data[i][j] + b[i][j];
-			return c;
-		}
-
-		else
-			return *this;
-	}
-	Matrix<T> operator+(const T b) const
-	{
+	Matrix<T> operator+(const Matrix<T> &b) const { // Keep const for this operator
+		if (m_Rows != b.m_Rows || m_Cols != b.m_Cols) {
+            if (empty() && !b.empty()) return b; // Adding empty to b returns b
+            if (!empty() && b.empty()) return *this; // Adding b (empty) to this returns this
+            if (empty() && b.empty()) return Matrix<T>(); // Adding two empty matrices
+			throw std::invalid_argument("Matrix dimensions must match for addition.");
+        }
 		Matrix<T> c(m_Rows, m_Cols);
-		for (int i = 0; i < m_Rows; i++)
-			for (int j = 0; j < m_Cols; j++)
-				c[i][j] = m_Data[i][j] + b;
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				c[i][j] = m_Data[i][j] + b[i][j];
+		return c;
+	}
+	Matrix<T> operator+(const T& val) const { // const T&
+		Matrix<T> c(m_Rows, m_Cols);
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				c[i][j] = m_Data[i][j] + val;
 		return c;
 	}
 
-	Matrix<T> operator+=(const Matrix<T> &b) const
-	{
-		if ((m_Rows == b.m_Rows) && (m_Cols == b.m_Cols))
-		{
-			Matrix<T> c(m_Rows, m_Cols);
-			for (int i = 0; i < m_Rows; i++)
-				for (int j = 0; j < m_Cols; j++)
-					c[i][j] = m_Data[i][j] + b[i][j];
-			*this = c;
-		}
-
+	Matrix<T>& operator+=(const Matrix<T> &b) { // Not const, return ref
+		if (m_Rows != b.m_Rows || m_Cols != b.m_Cols)
+			throw std::invalid_argument("Matrix dimensions must match for compound addition.");
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				m_Data[i][j] += b[i][j];
 		return *this;
 	}
 
-	Matrix<T> operator+=(const T b) const
-	{
-		Matrix<T> c(m_Rows, m_Cols);
-		for (int i = 0; i < m_Rows; i++)
-			for (int j = 0; j < m_Cols; j++)
-				c[i][j] = m_Data[i][j] + b;
-		*this = c;
+	Matrix<T>& operator+=(const T& val) { // Not const, return ref, const T&
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				m_Data[i][j] += val;
 		return *this;
 	}
 
-	Matrix<T> operator-(const Matrix<T> &b) const
-	{
-		if ((m_Rows == b.m_Rows) && (m_Cols == b.m_Cols))
-		{
-			Matrix<T> c(m_Rows, m_Cols);
-			for (int i = 0; i < m_Rows; i++)
-				for (int j = 0; j < m_Cols; j++)
-					c[i][j] = m_Data[i][j] - b[i][j];
-			return c;
-		}
-
-		else
-			return *this;
-	}
-
-	Matrix<T> operator-(const T b) const
-	{
+	Matrix<T> operator-(const Matrix<T> &b) const { // Keep const
+		if (m_Rows != b.m_Rows || m_Cols != b.m_Cols) {
+            if (empty() && !b.empty()) { // Subtracting b from empty
+                Matrix<T> neg_b(b.rows(), b.cols());
+                for(size_t r=0; r<b.rows(); ++r) for(size_t c=0; c<b.cols(); ++c) neg_b[r][c] = -b[r][c];
+                return neg_b;
+            }
+            if (!empty() && b.empty()) return *this;
+            if (empty() && b.empty()) return Matrix<T>();
+			throw std::invalid_argument("Matrix dimensions must match for subtraction.");
+        }
 		Matrix<T> c(m_Rows, m_Cols);
-		for (int i = 0; i < m_Rows; i++)
-			for (int j = 0; j < m_Cols; j++)
-				c[i][j] = m_Data[i][j] - b;
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				c[i][j] = m_Data[i][j] - b[i][j];
 		return c;
 	}
 
-	Matrix<T> operator-=(const Matrix<T> &b) const
-	{
-		if ((m_Rows == b.m_Rows) && (m_Cols == b.m_Cols))
-		{
-			Matrix<T> c(m_Rows, m_Cols);
-			for (int i = 0; i < m_Rows; i++)
-				for (int j = 0; j < m_Cols; j++)
-					c[i][j] = m_Data[i][j] - b[i][j];
-			*this = c;
-		}
-
-		return *this;
-	}
-	Matrix<T> operator-=(const T b) const
-	{
+	Matrix<T> operator-(const T& val) const { // Keep const, const T&
 		Matrix<T> c(m_Rows, m_Cols);
-		for (int i = 0; i < m_Rows; i++)
-			for (int j = 0; j < m_Cols; j++)
-				c[i][j] = m_Data[i][j] - b;
-		*this = c;
-		return *this;
-	}
-
-	Matrix<T> operator/(const T b) const
-	{
-		Matrix<T> c(m_Rows, m_Cols);
-		for (int i = 0; i < m_Rows; i++)
-			for (int j = 0; j < m_Cols; j++)
-				c[i][j] = m_Data[i][j] / b;
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				c[i][j] = m_Data[i][j] - val;
 		return c;
 	}
 
-	Matrix<T> operator/=(const T b) const
-	{
-		Matrix<T> c(m_Rows, m_Cols);
-		for (int i = 0; i < m_Rows; i++)
-			for (int j = 0; j < m_Cols; j++)
-				c[i][j] = m_Data[i][j] / b;
-		*this = c;
+	Matrix<T>& operator-=(const Matrix<T> &b) { // Not const, return ref
+		if (m_Rows != b.m_Rows || m_Cols != b.m_Cols)
+			throw std::invalid_argument("Matrix dimensions must match for compound subtraction.");
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				m_Data[i][j] -= b[i][j];
+		return *this;
+	}
+	Matrix<T>& operator-=(const T& val) { // Not const, return ref, const T&
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				m_Data[i][j] -= val;
 		return *this;
 	}
 
-	Matrix<T> operator*(const Matrix<T> &b) const
-	{
-		if (m_Cols == b.m_Rows)
-		{
-			Matrix<T> c(m_Rows, b.m_Cols);
-			for (int i = 0; i < m_Rows; i++)
-				for (int j = 0; j < m_Cols; j++)
-					for (int k = 0; k < b.m_Cols; k++)
-						c[i][k] += m_Data[i][j] * b[j][k];
-			return c;
-		}
-
-		else
-			return *this;
-	}
-
-	Matrix<T> operator*(const T b) const
-	{
+	Matrix<T> operator/(const T& val) const { // Keep const, const T&
+        if (std::abs(val) < 1e-9) { // Check for division by zero or near-zero for floating points
+             throw std::runtime_error("Division by zero or near-zero scalar.");
+        }
 		Matrix<T> c(m_Rows, m_Cols);
-		for (int i = 0; i < m_Rows; i++)
-			for (int j = 0; j < m_Cols; j++)
-				c[i][j] = m_Data[i][j] * b;
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				c[i][j] = m_Data[i][j] / val;
 		return c;
 	}
 
-	Matrix<T> operator*=(const T b) const
-	{
-		Matrix<T> c(m_Rows, m_Cols);
-		for (int i = 0; i < m_Rows; i++)
-			for (int j = 0; j < m_Cols; j++)
-				c[i][j] = m_Data[i][j] * b;
-		*this = c;
+	Matrix<T>& operator/=(const T& val) { // Not const, return ref, const T&
+        if (std::abs(val) < 1e-9) {
+             throw std::runtime_error("Division by zero or near-zero scalar.");
+        }
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				m_Data[i][j] /= val;
 		return *this;
 	}
 
-	Iterator begin() { return Iterator(m_Data); }
-	Iterator end() { return Iterator(m_Data + m_Rows); }
+	Matrix<T> operator*(const Matrix<T> &b) const { // Keep const
+		if (m_Cols != b.m_Rows) {
+            if (empty() || b.empty()) return Matrix<T>(m_Rows, b.m_Cols); // Product with empty matrix
+            throw std::invalid_argument("Inner dimensions must match for matrix multiplication.");
+        }
+		Matrix<T> c(m_Rows, b.m_Cols); // Already initialized to zeros by Matrix constructor if T is numeric
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t k = 0; k < b.m_Cols; k++) // iterate over columns of b for result column
+				for (size_t j = 0; j < m_Cols; j++) // iterate over columns of this (rows of b)
+					c[i][k] += m_Data[i][j] * b[j][k]; // Corrected accumulation and access to b
+		return c;
+	}
+
+	Matrix<T> operator*(const T& val) const { // Keep const, const T&
+		Matrix<T> c(m_Rows, m_Cols);
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				c[i][j] = m_Data[i][j] * val;
+		return c;
+	}
+
+	Matrix<T>& operator*=(const T& val) { // Not const, return ref, const T&
+		for (size_t i = 0; i < m_Rows; i++)
+			for (size_t j = 0; j < m_Cols; j++)
+				m_Data[i][j] *= val;
+		return *this;
+	}
+
+	Iterator begin() { return Iterator(m_Data.get()); } // Use .get() for unique_ptr
+	Iterator end() { return Iterator(m_Data.get() + m_Rows); } // Use .get()
+    Iterator begin() const { return Iterator(m_Data.get()); } // Const version
+	Iterator end() const { return Iterator(m_Data.get() + m_Rows); } // Const version
+
 
 private:
-	Matrix<T> getMinor(const Matrix<T> &matrix, size_t row_to_remove, size_t col_to_remove) const
-	{
-		if (matrix.m_Rows != matrix.m_Cols)
+	Matrix<T> getMinor(const Matrix<T> &matrix, size_t row_to_remove, size_t col_to_remove) const {
+		if (matrix.m_Rows == 0 || matrix.m_Cols == 0) 
+            throw std::invalid_argument("Cannot get minor of an empty matrix.");
+        if (matrix.m_Rows != matrix.m_Cols)
 			throw std::invalid_argument("Matrix must be square to compute minor.");
+        if (matrix.m_Rows < 1) // Should be caught by m_Rows == 0 earlier
+             throw std::invalid_argument("Matrix too small to compute minor.");
+
 
 		size_t n = matrix.m_Rows;
-		Matrix<T> minor_matrix(n - 1, n - 1);
+        if (n == 1 && (row_to_remove == 0 && col_to_remove == 0)) { // Minor of 1x1 is 0x0 matrix (det is 1)
+            return Matrix<T>(0,0); 
+        }
+        if (n==0) return Matrix<T>(0,0);
 
-		size_t minor_i = 0; // Row index for minor_matrix
-		for (size_t i = 0; i < n; ++i)
-		{
+
+		Matrix<T> minor_matrix(n - 1, n - 1);
+		size_t minor_i = 0;
+		for (size_t i = 0; i < n; ++i) {
 			if (i == row_to_remove)
 				continue;
-
-			size_t minor_j = 0; // Column index for minor_matrix
-			for (size_t j = 0; j < n; ++j)
-			{
+			size_t minor_j = 0;
+			for (size_t j = 0; j < n; ++j) {
 				if (j == col_to_remove)
 					continue;
-
 				minor_matrix[minor_i][minor_j] = matrix.m_Data[i][j];
 				++minor_j;
 			}
 			++minor_i;
 		}
-
 		return minor_matrix;
 	}
 
 	size_t m_Rows = 0;
 	size_t m_Cols = 0;
 	size_t m_Size = 0;
-	size_t m_Capacity = 0;
+	size_t m_Capacity = 0; // Represents number of rows m_Data can hold.
 	std::unique_ptr<MatrixRow<T>[]> m_Data;
 };
 }

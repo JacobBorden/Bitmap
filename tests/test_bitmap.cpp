@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 
 // Include the header for the code to be tested
-#include "../src/bitmap.h"
+#include "../src/bitmap/bitmap.h"
 
 // Overload for Pixel struct comparison
 bool operator==(const Pixel& p1, const Pixel& p2) {

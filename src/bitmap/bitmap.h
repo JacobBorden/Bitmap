@@ -1,8 +1,8 @@
 #ifndef _BITMAP_
 #define _BITMAP_
 
-#include "matrix/matrix.h"
-#include "bitmapfile/bitmap_file.h"
+#include "../matrix/matrix.h"
+#include "../bitmapfile/bitmap_file.h"
 #include <cmath>     // For mathematical operations like sqrt, pow.
 #include <algorithm> // For std::min, std::max.
 
