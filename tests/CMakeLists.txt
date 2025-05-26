@@ -13,9 +13,8 @@ set(TEST_SOURCES
 # Create test executable
 add_executable(bitmap_tests ${TEST_SOURCES})
 
-# Link against main bitmap library and dependencies
-# (Assumes bitmap, bitmapfile, matrix, and gtest_main are available in parent scope)
-target_link_libraries(bitmap_tests PRIVATE bitmap bitmapfile matrix gtest_main)
+# Link against main bitmap library and gtest only (bitmapfile and matrix are now part of bitmap)
+target_link_libraries(bitmap_tests PRIVATE bitmap gtest_main)
 
 # Use CTest's test discovery for GoogleTest
 include(GoogleTest)
