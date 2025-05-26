@@ -30,9 +30,14 @@ The library supports the following image manipulation functions:
 ## Dependencies
 
 This library utilizes:
-*   A simple Matrix library (from `dependencies/matrix`)
-*   A BMP file handling library (from `dependencies/bitmapfile`)
-These are included in the `dependencies` directory.
+*   A simple Matrix library (from `src/matrix`)
+*   A BMP file handling library (from `src/bitmapfile`)
+These are now part of the main source tree under the `src/` directory.
+
+## Core Modules
+*   **Bitmap Library (`src/bitmap`)**: Provides core image processing functions.
+*   **Bitmap File Handler (`src/bitmapfile`)**: Handles loading and saving of BMP files.
+*   **Matrix Library (`src/matrix`)**: A generic matrix manipulation library used by the bitmap processing functions.
 
 ## Building the Project
 
@@ -58,7 +63,7 @@ ctest
 ## Basic Usage Example
 
 ```cpp
-#include "src/bitmap.h" // Adjust path if necessary
+#include "bitmap/bitmap.h" // Adjust path if necessary, assumes src/ is an include dir
 #include <iostream>
 
 int main() {

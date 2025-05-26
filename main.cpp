@@ -1,4 +1,4 @@
-#include "src/bitmap.h" // Adjust path if necessary, assumes bitmap.h is in src/
+#include "bitmap/bitmap.h" // Adjust path if necessary, assumes bitmap.h is in src/
 #include <iostream>     // For std::cout, std::cerr
 
 int main() {
