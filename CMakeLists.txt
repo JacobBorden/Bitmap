@@ -3,29 +3,22 @@ project(bitmap VERSION 1.0.0)
 
 include(CTest)
 enable_testing()
-include(FetchContent)
 
-FetchContent_Declare(
-    matrix
-    GIT_REPOSITORY https://github.com/JacobBorden/Matrix.git
-    SOURCE_DIR ../dependencies/matrix
+# Add your main library with all sources
+add_library(bitmap STATIC 
+    src/bitmap.cpp
+    src/bitmapfile/bitmap_file.cpp
 )
-
-FetchContent_Declare(
-    bitmapfile
-    GIT_REPOSITORY https://github.com/JacobBorden/BitmapFile.git
-    SOURCE_DIR ../dependencies/bitmapfile
-)
-
-FetchContent_MakeAvailable(bitmapfile)
-FetchContent_MakeAvailable(matrix)
-
-# Add your main library
-add_library(bitmap STATIC src/bitmap.cpp )
 
 # Executable for main.cpp (if it's a demo or separate utility)
 add_executable(testexe main.cpp)
-target_link_libraries(testexe PRIVATE bitmap bitmapfile matrix) # Link testexe against our libraries
+target_link_libraries(testexe PRIVATE bitmap)
+
+target_include_directories(bitmap PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bitmapfile
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/matrix
+)
 
 # GoogleTest
 include(FetchContent)
