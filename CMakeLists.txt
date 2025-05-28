@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
 project(bitmap VERSION 1.0.0)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_EXTENSIONS OFF) 
+
 include(CTest)
 enable_testing()
 
@@ -8,6 +12,7 @@ enable_testing()
 add_library(bitmap STATIC 
     src/bitmap/bitmap.cpp
     src/bitmapfile/bitmap_file.cpp
+    src/format/bitmap.cpp
 )
 
 # Executable for main.cpp (if it's a demo or separate utility)
@@ -15,6 +20,7 @@ add_executable(testexe main.cpp)
 target_link_libraries(testexe PRIVATE bitmap)
 
 target_include_directories(bitmap PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/bitmapfile
     ${CMAKE_CURRENT_SOURCE_DIR}/src/matrix
