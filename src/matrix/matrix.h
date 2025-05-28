@@ -240,8 +240,8 @@ namespace Matrix
 		using Iterator = MatrixIterator<Matrix<T>>; // Corrected template argument
 		using ColumnIterator = MatrixColumnIterator<T>; // Corrected, was ColumonIterator and wrong type
 
-		Matrix<T>() = default;
-		explicit Matrix<T>(int row_count, int column_count)
+		Matrix() = default;
+		explicit Matrix(int row_count, int column_count)
 			: m_Rows(row_count), m_Cols(column_count), m_Size(row_count * column_count), m_Capacity(row_count), m_Data(row_count > 0 ? std::make_unique<MatrixRow<T>[]>(row_count) : nullptr)
 		{
 			if (row_count > 0) {
@@ -250,7 +250,7 @@ namespace Matrix
 			}
 		}
         // Constructor with initial value
-        Matrix<T>(int row_count, int column_count, const T& initial_value)
+        Matrix(int row_count, int column_count, const T& initial_value)
             : m_Rows(row_count), m_Cols(column_count), m_Size(row_count * column_count), m_Capacity(row_count), m_Data(row_count > 0 ? std::make_unique<MatrixRow<T>[]>(row_count) : nullptr)
         {
             if (row_count > 0) {
