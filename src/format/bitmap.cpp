@@ -131,20 +131,20 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     // 3. Convert to Matrix<::Pixel>
     Matrix::Matrix<::Pixel> image_matrix = ::CreateMatrixFromBitmap(temp_bmp_file); 
 
-    if (image_matrix.Width() == 0 || image_matrix.Height() == 0) {
+    if (image_matrix.cols() == 0 || image_matrix.rows() == 0) { // Changed Width/Height to cols/rows
         return BitmapError::InvalidImageData; 
     }
 
     // 4. Convert Matrix<::Pixel> (assumed RGBA by ::Pixel members) to BmpTool::Bitmap (RGBA)
     Bitmap bmp_out;
-    bmp_out.w = image_matrix.Width();
-    bmp_out.h = image_matrix.Height();
+    bmp_out.w = image_matrix.cols(); // Changed Width to cols
+    bmp_out.h = image_matrix.rows(); // Changed Height to rows
     bmp_out.bpp = 32; 
     bmp_out.data.resize(static_cast<size_t>(bmp_out.w) * bmp_out.h * 4);
 
     for (uint32_t y = 0; y < bmp_out.h; ++y) {
         for (uint32_t x = 0; x < bmp_out.w; ++x) {
-            const ::Pixel& src_pixel = image_matrix.Get(x, y); 
+            const ::Pixel& src_pixel = image_matrix.at(y, x); // Changed Get(x,y) to at(y,x)
             
             size_t dest_idx = (static_cast<size_t>(y) * bmp_out.w + x) * 4;
             bmp_out.data[dest_idx + 0] = src_pixel.red;   
@@ -169,7 +169,7 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
 
     // 2. Convert BmpTool::Bitmap (RGBA) to Matrix<::Pixel> (RGBA)
     // Assuming ::Pixel struct has members .red, .green, .blue, .alpha
-    Matrix::Matrix<::Pixel> image_matrix(bitmap_in.w, bitmap_in.h); 
+    Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // Changed order to (rows, cols)
 
     for (uint32_t y = 0; y < bitmap_in.h; ++y) {
         for (uint32_t x = 0; x < bitmap_in.w; ++x) {
@@ -180,7 +180,7 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
             dest_pixel.blue  = src_pixel_ptr[2];
             dest_pixel.alpha = src_pixel_ptr[3];
             
-            image_matrix.Set(x, y, dest_pixel); 
+            image_matrix.at(y, x) = dest_pixel; // Changed Set(x,y) to at(y,x)
         }
     }
 
@@ -238,7 +238,7 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
 
 
     // 5. Return
-    return Result<void, BitmapError>(BitmapError::Ok);
+    return BmpTool::Success{}; // This will implicitly convert to Result<void, BitmapError>(Success{})
 }
 
 } // namespace BmpTool

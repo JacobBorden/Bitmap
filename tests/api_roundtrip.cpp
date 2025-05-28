@@ -64,9 +64,8 @@ int main() {
     std::cout << "Buffer 1 resized to " << estimated_size1 << " for first save." << std::endl;
 
     auto save_result1 = BmpTool::save(original_bmp, std::span<uint8_t>(saved_buffer1));
-    // For Result<void, E>, success is typically indicated by error() == E::Ok and isSuccess() being false.
-    assert(save_result1.isSuccess() && save_result1.error() == BmpTool::BitmapError::Ok); // Assuming Ok is for void success
-    if (!save_result1.isSuccess() || save_result1.error() != BmpTool::BitmapError::Ok) {
+    assert(save_result1.isSuccess());
+    if (!save_result1.isSuccess()) {
         std::cerr << "TEST FAILED: First save failed with error: " << static_cast<int>(save_result1.error()) << std::endl;
         return 1;
     }
@@ -107,8 +106,8 @@ int main() {
     std::cout << "Buffer 2 resized to " << estimated_size2 << " for second save." << std::endl;
 
     auto save_result2 = BmpTool::save(loaded_bmp1, std::span<uint8_t>(saved_buffer2));
-    assert(save_result2.isSuccess() && save_result2.error() == BmpTool::BitmapError::Ok);
-     if (!save_result2.isSuccess() || save_result2.error() != BmpTool::BitmapError::Ok) {
+    assert(save_result2.isSuccess());
+     if (!save_result2.isSuccess()) {
         std::cerr << "TEST FAILED: Second save failed with error: " << static_cast<int>(save_result2.error()) << std::endl;
         return 1;
     }
