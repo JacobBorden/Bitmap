@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2025-05-28
+
+### Added
+- **New Bitmap API Layer (`BmpTool`)**:
+    - Introduced a new public API header `include/bitmap.hpp`.
+    - Added `BmpTool::load(std::span<const uint8_t>)` function to load BMP data from a memory span into a `BmpTool::Bitmap` (RGBA format). This function bridges to the existing library's `::CreateMatrixFromBitmap` after parsing the input span.
+    - Added `BmpTool::save(const BmpTool::Bitmap&, std::span<uint8_t>)` function to save a `BmpTool::Bitmap` (RGBA) to a memory span. This function bridges to the existing library's `::CreateBitmapFromMatrix` and then serializes the resulting `::Bitmap::File` to the span.
+    - Defined `BmpTool::Bitmap` struct for RGBA pixel data and `BmpTool::Result` for error handling.
+    - Implemented the bridging logic in `src/format/bitmap.cpp`.
+    - Added Doxygen comments for the new public API.
+- **API Roundtrip Test**:
+    - Added `tests/api_roundtrip.cpp` to verify that loading, saving, and re-loading a bitmap using the new API results in identical data.
+- **Build System Updates**:
+    - Updated CMakeLists.txt files (root and tests) to include the new API implementation and test.
+    - Set C++ standard to C++20 globally in the root CMakeLists.txt.
+
+### Changed
+- The `bitmap` library now exposes the `BmpTool` API via `include/bitmap.hpp` for simplified bitmap operations.
+
 ## [0.2.0] - 2024-07-27
 
 ### Changed
