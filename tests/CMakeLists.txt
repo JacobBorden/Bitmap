@@ -27,3 +27,10 @@ target_link_libraries(bitmap_tests PRIVATE bitmap gtest_main)
 # Use CTest's test discovery for GoogleTest
 include(GoogleTest)
 gtest_discover_tests(bitmap_tests)
+
+if(ENABLE_FUZZING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_executable(fuzz_bitmap fuzz/fuzz_bitmap.cpp)
+  target_link_libraries(fuzz_bitmap PRIVATE bitmap)
+  set_target_properties(fuzz_bitmap PROPERTIES LINK_FLAGS "-fsanitize=address,fuzzer")
+  message(STATUS "Fuzz target fuzz_bitmap added.")
+endif()

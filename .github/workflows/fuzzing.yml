@@ -1,0 +1,40 @@
+name: Fuzzing
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Clang
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang llvm
+
+    - name: Configure CMake for Fuzzing
+      run: |
+        cmake -S . -B build_fuzz -DENABLE_FUZZING=ON -DCMAKE_BUILD_TYPE=Debug
+      env:
+        CC: clang
+        CXX: clang++
+
+    - name: Build fuzz target
+      run: cmake --build build_fuzz --target fuzz_bitmap --config Debug
+
+    - name: Create corpus directory
+      run: mkdir -p build_fuzz/corpus_fuzzing # Separate from build-time corpus
+
+    - name: Run fuzzer
+      run: |
+        ./build_fuzz/tests/fuzz_bitmap -max_total_time=60 -print_final_stats=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/
+        # Optionally, if you want to use existing corpus from the repo (e.g., tests/fuzz/corpus)
+        # ./build_fuzz/tests/fuzz_bitmap -max_total_time=60 -print_final_stats=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/ tests/fuzz/corpus/
+      # If the fuzzer finds a crash, error_exitcode=1 will make the step fail.

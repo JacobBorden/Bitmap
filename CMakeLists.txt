@@ -1,9 +1,31 @@
 cmake_minimum_required(VERSION 3.10)
 project(bitmap VERSION 1.0.0)
 
+option(ENABLE_FUZZING "Enable fuzzing builds" OFF)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CXX_EXTENSIONS OFF) 
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(ENABLE_FUZZING)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    find_program(CLANG_COMPILER NAMES clang++ clang)
+    if(CLANG_COMPILER)
+      set(CMAKE_CXX_COMPILER ${CLANG_COMPILER})
+    else()
+      message(WARNING "Clang compiler not found. Disabling fuzzing.")
+      set(ENABLE_FUZZING OFF)
+    endif()
+  endif()
+
+  if(ENABLE_FUZZING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(STATUS "Fuzzing enabled. Using Clang compiler.")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fsanitize=address,fuzzer-no-link")
+    # For linking fuzz targets, we'll use -fsanitize=fuzzer later
+  else()
+    message(STATUS "Fuzzing disabled or Clang not used.")
+  endif()
+endif()
 
 include(CTest)
 enable_testing()
