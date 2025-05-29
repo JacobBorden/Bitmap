@@ -192,6 +192,34 @@ Matrix::Matrix<Pixel> CreateMatrixFromBitmap(Bitmap::File bitmapFile)
     // The loop structure (i from 0 to rows-1) handles this naturally if pixel data is ordered correctly.
     Matrix::Matrix<Pixel> imageMatrix(bitmapFile.bitmapInfoHeader.biHeight, bitmapFile.bitmapInfoHeader.biWidth);
 
+
+    if (imageMatrix.rows() <= 0 || imageMatrix.cols() <= 0) {
+        // Or handle as an error, depending on how Matrix constructor handles non-positive dims.
+        // Assuming Matrix constructor ensures rows/cols are positive if biHeight/biWidth were,
+        // or if biHeight is negative, it uses abs(biHeight). Let's use imageMatrix dimensions.
+        return imageMatrix; // Return empty/default matrix
+    }
+
+    unsigned int bpp = bitmapFile.bitmapInfoHeader.biBitCount;
+    if (bpp != 24 && bpp != 32) {
+        // This function only handles 24 and 32 bpp as per its structure.
+        // std::cerr << "CreateMatrixFromBitmap Error: Unsupported bit depth " << bpp << std::endl;
+        return imageMatrix; // Return empty/default matrix
+    }
+
+    size_t bytes_per_pixel = bpp / 8;
+    // Use uint64_t for expected_data_size to prevent overflow during this calculation
+    // if imageMatrix.rows() or imageMatrix.cols() are very large.
+    uint64_t expected_data_size = static_cast<uint64_t>(imageMatrix.rows()) * imageMatrix.cols() * bytes_per_pixel;
+
+    if (static_cast<uint64_t>(bitmapFile.bitmapData.size()) < expected_data_size) {
+        // std::cerr << "CreateMatrixFromBitmap Error: bitmapData.size() " << bitmapFile.bitmapData.size()
+        //           << " is less than expected_data_size " << expected_data_size
+        //           << " for dimensions " << imageMatrix.rows() << "x" << imageMatrix.cols()
+        //           << " at " << bpp << "bpp." << std::endl;
+        return imageMatrix; // Return empty/default matrix as data is insufficient
+    }
+
     if (bitmapFile.bitmapInfoHeader.biBitCount == 32) // For 32-bit bitmaps (BGRA)
     {
         int k = 0; // Index for bitmapFile.bitmapData
