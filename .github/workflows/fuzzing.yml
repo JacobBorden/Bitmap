@@ -26,15 +26,33 @@ jobs:
         CC: clang
         CXX: clang++
 
-    - name: Build fuzz target
-      run: cmake --build build_fuzz --target fuzz_bitmap --config Debug
+    - name: Build all fuzz targets
+      run: cmake --build build_fuzz --config Debug # This will build all executables configured for the Debug build
 
-    - name: Create corpus directory
-      run: mkdir -p build_fuzz/corpus_fuzzing # Separate from build-time corpus
-
-    - name: Run fuzzer
+    - name: Create corpus directories
       run: |
-        ./build_fuzz/tests/fuzz_bitmap -max_total_time=60 -print_final_stats=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/
-        # Optionally, if you want to use existing corpus from the repo (e.g., tests/fuzz/corpus)
-        # ./build_fuzz/tests/fuzz_bitmap -max_total_time=60 -print_final_stats=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/ tests/fuzz/corpus/
-      # If the fuzzer finds a crash, error_exitcode=1 will make the step fail.
+        mkdir -p build_fuzz/corpus_fuzzing/fuzz_bitmap_corpus
+        mkdir -p build_fuzz/corpus_fuzzing/fuzz_bmp_tool_save_corpus
+        mkdir -p build_fuzz/corpus_fuzzing/fuzz_bitmap_file_corpus
+        mkdir -p build_fuzz/corpus_fuzzing/fuzz_image_operations_corpus
+        mkdir -p build_fuzz/corpus_fuzzing/fuzz_matrix_corpus
+
+    - name: Run fuzz_bitmap
+      run: |
+        ./build_fuzz/tests/fuzz_bitmap -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_bitmap_corpus/
+    
+    - name: Run fuzz_bmp_tool_save
+      run: |
+        ./build_fuzz/tests/fuzz_bmp_tool_save -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_bmp_tool_save_corpus/
+
+    - name: Run fuzz_bitmap_file
+      run: |
+        ./build_fuzz/tests/fuzz_bitmap_file -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_bitmap_file_corpus/
+
+    - name: Run fuzz_image_operations
+      run: |
+        ./build_fuzz/tests/fuzz_image_operations -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_image_operations_corpus/
+
+    - name: Run fuzz_matrix
+      run: |
+        ./build_fuzz/tests/fuzz_matrix -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_matrix_corpus/
