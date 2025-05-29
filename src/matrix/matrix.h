@@ -241,20 +241,20 @@ namespace Matrix
 		using ColumnIterator = MatrixColumnIterator<T>; // Corrected, was ColumonIterator and wrong type
 
 		Matrix() = default;
-		explicit Matrix(int row_count, int column_count)
+		explicit Matrix(size_t row_count, size_t column_count)
 			: m_Rows(row_count), m_Cols(column_count), m_Size(row_count * column_count), m_Capacity(row_count), m_Data(row_count > 0 ? std::make_unique<MatrixRow<T>[]>(row_count) : nullptr)
 		{
 			if (row_count > 0) {
-				for (int i = 0; i < m_Rows; i++)
+				for (size_t i = 0; i < m_Rows; i++)
 					m_Data[i] = MatrixRow<T>(m_Cols); // Each row initialized with default T values
 			}
 		}
         // Constructor with initial value
-        Matrix(int row_count, int column_count, const T& initial_value)
+        Matrix(size_t row_count, size_t column_count, const T& initial_value)
             : m_Rows(row_count), m_Cols(column_count), m_Size(row_count * column_count), m_Capacity(row_count), m_Data(row_count > 0 ? std::make_unique<MatrixRow<T>[]>(row_count) : nullptr)
         {
             if (row_count > 0) {
-                for (int i = 0; i < m_Rows; i++) {
+                for (size_t i = 0; i < m_Rows; i++) {
                     m_Data[i].assign(m_Cols, initial_value);
                 }
             }

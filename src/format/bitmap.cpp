@@ -124,6 +124,10 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
         return BitmapError::InvalidImageData; 
     }
 
+    if(bmp_data.data().width() > (MAX_SIZE_T / bmp_data.data().height()))
+    {
+        return BitmapError::InvalidImageData; // Prevent overflow in size calculation
+    } 
     temp_bmp_file.bitmapData.resize(expected_pixel_data_size);
     std::memcpy(temp_bmp_file.bitmapData.data(), bmp_data.data() + fh.bfOffBits, expected_pixel_data_size);
     temp_bmp_file.SetValid(); 
