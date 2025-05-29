@@ -43,6 +43,9 @@ bool validateHeaders(const InternalBitmapFileHeader& fileHeader, const InternalB
     if (fileHeader.bfOffBits < (sizeof(InternalBitmapFileHeader) + infoHeader.biSize)) {
       // This check is simplified. A full check would also consider bfOffBits < fileHeader.bfSize
     }
+    if((infoHeader.biWidth * infoHeader.biHeight) > std::numeric_limits<size_t>::max()) {
+        return false; // Prevent overflow in size calculations
+    }
     return true;
 }
 
