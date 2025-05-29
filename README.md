@@ -196,3 +196,29 @@ int main() {
 }
 ```
 Refer to `main.cpp` for more examples.
+
+## Fuzz Testing
+
+This project includes a suite of fuzz tests to help ensure code robustness and identify potential vulnerabilities. The fuzzing setup uses Clang's libFuzzer along with AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan).
+
+### Enabling Fuzzing
+
+To build the fuzz targets, enable the `ENABLE_FUZZING` option when configuring with CMake:
+
+```bash
+cmake -S . -B build_fuzz -DENABLE_FUZZING=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build_fuzz --config Debug
+```
+This requires Clang to be installed and set as the C++ compiler. The GitHub Actions workflow (`.github/workflows/fuzzing.yml`) does this automatically.
+
+### Available Fuzz Targets
+
+The following fuzz targets are available and will be built when fuzzing is enabled:
+
+*   `fuzz_bitmap`: Tests the `BmpTool::load` function from `include/bitmap.hpp`.
+*   `fuzz_bmp_tool_save`: Tests the `BmpTool::save` function from `include/bitmap.hpp`.
+*   `fuzz_bitmap_file`: Tests operations of the `Bitmap::File` class from `src/bitmapfile/bitmap_file.h`.
+*   `fuzz_image_operations`: Tests various image manipulation functions from `src/bitmap/bitmap.h`.
+*   `fuzz_matrix`: Tests operations of the `Matrix::Matrix` class from `src/matrix/matrix.h`.
+
+Each fuzzer will run for a short duration (e.g., 60 seconds) when executed via the GitHub Actions workflow. They maintain their own corpus directories within `build_fuzz/corpus_fuzzing/`.

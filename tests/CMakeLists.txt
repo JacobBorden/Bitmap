@@ -29,8 +29,45 @@ include(GoogleTest)
 gtest_discover_tests(bitmap_tests)
 
 if(ENABLE_FUZZING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set(FUZZ_LINK_FLAGS "-fsanitize=address,undefined,fuzzer") # Includes 'undefined'
+
+  # Original fuzzer, updated
   add_executable(fuzz_bitmap fuzz/fuzz_bitmap.cpp)
   target_link_libraries(fuzz_bitmap PRIVATE bitmap)
-  set_target_properties(fuzz_bitmap PROPERTIES LINK_FLAGS "-fsanitize=address,fuzzer")
-  message(STATUS "Fuzz target fuzz_bitmap added.")
+  set_target_properties(fuzz_bitmap PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_bitmap (updated flags) added.")
+
+  # New fuzzer for BmpTool::save
+  add_executable(fuzz_bmp_tool_save fuzz/fuzz_bmp_tool_save.cpp)
+  target_link_libraries(fuzz_bmp_tool_save PRIVATE bitmap)
+  set_target_properties(fuzz_bmp_tool_save PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_bmp_tool_save added.")
+
+  # New fuzzer for Bitmap::File operations
+  add_executable(fuzz_bitmap_file fuzz/fuzz_bitmap_file.cpp)
+  target_link_libraries(fuzz_bitmap_file PRIVATE bitmap)
+  set_target_properties(fuzz_bitmap_file PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_bitmap_file added.")
+
+  # New fuzzer for image manipulation functions
+  add_executable(fuzz_image_operations fuzz/fuzz_image_operations.cpp)
+  target_link_libraries(fuzz_image_operations PRIVATE bitmap)
+  set_target_properties(fuzz_image_operations PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_image_operations added.")
+
+  # New fuzzer for Matrix operations
+  add_executable(fuzz_matrix fuzz/fuzz_matrix.cpp)
+  target_link_libraries(fuzz_matrix PRIVATE bitmap)
+  set_target_properties(fuzz_matrix PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_matrix added.")
+  
 endif()
+# Note: The public include directories from the 'bitmap' target 
+# (configured in the main CMakeLists.txt) should be automatically inherited 
+# by these fuzz targets because they link against 'bitmap'. 
+# This means include paths like "bitmap.hpp" (for top-level include files) 
+# or "bitmapfile/bitmap_file.h" (for files within src/) should work 
+# in the fuzzers if the fuzzers are updated to use them. 
+# The current fuzzers use relative paths like "../../include/bitmap.hpp", 
+# which also work due to the file structure but are less clean.
+# This is a potential future cleanup for the fuzzer source files, not this CMake update.

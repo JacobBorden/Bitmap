@@ -20,7 +20,7 @@ if(ENABLE_FUZZING)
 
   if(ENABLE_FUZZING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message(STATUS "Fuzzing enabled. Using Clang compiler.")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fsanitize=address,fuzzer-no-link")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fsanitize=address,undefined,fuzzer-no-link")
     # For linking fuzz targets, we'll use -fsanitize=fuzzer later
   else()
     message(STATUS "Fuzzing disabled or Clang not used.")
