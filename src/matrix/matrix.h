@@ -38,8 +38,7 @@ namespace Matrix
 		MatrixRowIterator &operator-=(difference_type n) { m_ptr -= n; return *this; }
 		difference_type operator-(const MatrixRowIterator &other) const { return m_ptr - other.m_ptr; }
 		pointer operator->() const { return m_ptr; }
-		reference operator*() { return *m_ptr; }
-		const reference operator*() const { return *m_ptr; }
+		reference operator*() { return *m_ptr; } // Remove 'const' qualifier on reference type for operator*()
 		bool operator==(const MatrixRowIterator &other) const { return m_ptr == other.m_ptr; }
 		bool operator!=(const MatrixRowIterator &other) const { return m_ptr != other.m_ptr; }
 		bool operator<(const MatrixRowIterator &other) const { return m_ptr < other.m_ptr; }
