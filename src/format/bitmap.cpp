@@ -167,6 +167,12 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
         return BitmapError::UnsupportedBpp; 
     }
 
+    const size_t expected_data_size = static_cast<size_t>(bitmap_in.w) * bitmap_in.h * 4; // 4 bytes per pixel for 32 bpp
+    if (bitmap_in.data.size() < expected_data_size) {
+        // The provided pixel data buffer is smaller than what the width, height, and bpp imply.
+        return BitmapError::InvalidImageData; // Or a more specific error like InsufficientPixelData
+    }
+
     // 2. Convert BmpTool::Bitmap (RGBA) to Matrix<::Pixel> (RGBA)
     // Assuming ::Pixel struct has members .red, .green, .blue, .alpha
     Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // Changed order to (rows, cols)
