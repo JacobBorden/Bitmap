@@ -67,6 +67,12 @@ bool Bitmap::File::Save()
     if (!file) { return false; }
 
     const unsigned char* current_pixel_data = bitmapData.data();
+    uint64_t required_data_size = static_cast<uint64_t>(std::abs(writeInfoHeader.biHeight)) * rowBytesUnpadded;
+    
+    if (static_cast<uint64_t>(bitmapData.size()) < required_data_size) {
+        // std::cerr << "Save error: bitmapData size is insufficient for declared dimensions." << std::endl;
+        return false;
+    }
     // Ensure bitmapData has enough data for what headers claim
     if (bitmapData.size() < std::abs(writeInfoHeader.biHeight) * rowBytesUnpadded) {
         // std::cerr << "Save error: bitmapData size is insufficient for declared dimensions." << std::endl;
