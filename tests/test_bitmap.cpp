@@ -548,6 +548,6 @@ TEST(BmpToolLoadTest, LoadWithInvalidMagicType) {
     std::span<const uint8_t> data_span(header_data.data(), header_data.size());
     auto result = BmpTool::load(data_span);
 
-    ASSERT_TRUE(result.has_error());
+    ASSERT_TRUE(result.isError());
     EXPECT_EQ(result.error(), BmpTool::BitmapError::NotABmp);
 }
