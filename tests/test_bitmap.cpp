@@ -4,7 +4,13 @@
 #include <gtest/gtest.h>
 
 // Include the header for the code to be tested
-#include "../src/bitmap/bitmap.h"
+#include "../src/bitmap/bitmap.h" // Original include for Pixel, etc.
+#include "../../include/bitmap.hpp" // For BmpTool::load and BmpTool::BitmapError
+
+#include <array>   // For std::array
+#include <span>    // For std::span
+#include <cstdint> // For fixed-width integer types
+#include <cstring> // For std::memcpy
 
 // Overload for Pixel struct comparison
 bool operator==(const Pixel& p1, const Pixel& p2) {
@@ -491,4 +497,57 @@ TEST(BitmapTest, ChangePixelLuminanceCyan) {
 
     Pixel p_not_cyan = {20, 30, 150, 255}; // R is dominant
     EXPECT_EQ(p_not_cyan, ChangePixelLuminanceCyan(p_not_cyan, lum_factor));
+}
+
+// New Test Suite for BmpTool specific tests
+TEST(BmpToolLoadTest, LoadWithInvalidMagicType) {
+    std::array<uint8_t, 54> header_data{}; // Zero-initialize
+
+    // Set invalid magic type
+    header_data[0] = 'X';
+    header_data[1] = 'Y';
+
+    // Fill in plausible values for other critical fields to avoid premature errors
+    // that might mask the magic type check.
+
+    // BITMAPFILEHEADER (14 bytes total)
+    // bfSize (offset 2, size 4): Total size of file. Let's say 54 (header only) + (16*16*3) for a dummy 16x16 24bpp image.
+    uint32_t dummy_file_size = 54 + (16 * 16 * 3);
+    std::memcpy(&header_data[2], &dummy_file_size, sizeof(dummy_file_size));
+    // bfOffBits (offset 10, size 4): Offset to pixel data. Standard is 54 for no palette.
+    uint32_t off_bits = 54;
+    std::memcpy(&header_data[10], &off_bits, sizeof(off_bits));
+
+    // BITMAPINFOHEADER (starts at byte 14, 40 bytes total)
+    // biSize (offset 14, size 4): Size of BITMAPINFOHEADER, should be 40.
+    uint32_t info_header_size = 40;
+    std::memcpy(&header_data[14], &info_header_size, sizeof(info_header_size));
+    // biWidth (offset 18, size 4): e.g., 16
+    int32_t width = 16;
+    std::memcpy(&header_data[18], &width, sizeof(width));
+    // biHeight (offset 22, size 4): e.g., 16
+    int32_t height = 16;
+    std::memcpy(&header_data[22], &height, sizeof(height));
+    // biPlanes (offset 26, size 2): must be 1
+    uint16_t planes = 1;
+    std::memcpy(&header_data[26], &planes, sizeof(planes));
+    // biBitCount (offset 28, size 2): e.g., 24
+    uint16_t bit_count = 24;
+    std::memcpy(&header_data[28], &bit_count, sizeof(bit_count));
+    // biCompression (offset 30, size 4): must be 0 (BI_RGB) for uncompressed
+    uint32_t compression = 0; // BI_RGB
+    std::memcpy(&header_data[30], &compression, sizeof(compression));
+    // biSizeImage (offset 34, size 4): image size in bytes. (16*16*3)
+    uint32_t image_size = 16 * 16 * 3;
+    std::memcpy(&header_data[34], &image_size, sizeof(image_size));
+    // biXPelsPerMeter (offset 38, size 4): Optional, can be 0
+    // biYPelsPerMeter (offset 42, size 4): Optional, can be 0
+    // biClrUsed (offset 46, size 4): Optional, can be 0 for 24bpp
+    // biClrImportant (offset 50, size 4): Optional, can be 0
+
+    std::span<const uint8_t> data_span(header_data.data(), header_data.size());
+    auto result = BmpTool::load(data_span);
+
+    ASSERT_TRUE(result.has_error());
+    EXPECT_EQ(result.error(), BmpTool::BitmapError::NotABmp);
 }
