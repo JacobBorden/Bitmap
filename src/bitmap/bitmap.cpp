@@ -197,12 +197,12 @@ void internal_convert_bgr_to_bgra_simd(const uint8_t* src_row_bgr_ptr, ::Pixel* 
 #endif
 
 #if defined(__AVX2__) || defined(__SSSE3__) // Use SSSE3 for AVX2 as well if no specific AVX2 code
-    const size_t pixels_per_step = 4;
+    const size_t pixels_per_step = 4; 
     __m128i bgr_to_bgrX_mask = _mm_setr_epi8(
-        0, 1, 2, (char)0x80,
-        3, 4, 5, (char)0x80,
-        6, 7, 8, (char)0x80,
-        9, 10, 11, (char)0x80
+        0, 1, 2, (char)0x80, 
+        3, 4, 5, (char)0x80, 
+        6, 7, 8, (char)0x80, 
+        9, 10, 11, (char)0x80 
     );
     __m128i alpha_channel_ff = _mm_setr_epi8(
         0,0,0, (char)0xFF, 0,0,0,(char)0xFF, 0,0,0,(char)0xFF, 0,0,0,(char)0xFF
@@ -213,13 +213,13 @@ void internal_convert_bgr_to_bgra_simd(const uint8_t* src_row_bgr_ptr, ::Pixel* 
         __m128i bgra_pixels_expanded = _mm_shuffle_epi8(bgr_data, bgr_to_bgrX_mask);
         __m128i bgra_pixels_final = _mm_or_si128(bgra_pixels_expanded, alpha_channel_ff);
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dest_row_pixel_ptr + current_dest_pixel_idx), bgra_pixels_final);
-        current_src_byte_offset += pixels_per_step * 3;
-        current_dest_pixel_idx += pixels_per_step;
+        current_src_byte_offset += pixels_per_step * 3; 
+        current_dest_pixel_idx += pixels_per_step;    
         num_pixels_to_process -= pixels_per_step;
     }
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
     const size_t pixels_per_step = 4;
-    const uint8_t table_bgr_to_bgr0[] = {0,1,2,16, 3,4,5,16, 6,7,8,16, 9,10,11,16};
+    const uint8_t table_bgr_to_bgr0[] = {0,1,2,16, 3,4,5,16, 6,7,8,16, 9,10,11,16}; 
     uint8x16_t neon_shuffle_table = vld1q_u8(table_bgr_to_bgr0);
     const uint8_t alpha_bytes[] = {0,0,0,0xFF, 0,0,0,0xFF, 0,0,0,0xFF, 0,0,0,0xFF};
     uint8x16_t alpha_channel_ff_neon = vld1q_u8(alpha_bytes);
@@ -235,7 +235,7 @@ void internal_convert_bgr_to_bgra_simd(const uint8_t* src_row_bgr_ptr, ::Pixel* 
         current_dest_pixel_idx += pixels_per_step;
         num_pixels_to_process -= pixels_per_step;
     }
-#else
+#else 
     // This #else block ensures that if no SIMD path is taken (e.g. SSSE3/NEON not defined, or AVX2 defined but its specific block is empty and it's not grouped with SSSE3),
     // the scalar loop below is the ONLY path for processing.
     // The current structure with #if defined(__AVX2__) || defined(__SSSE3__) followed by #elif defined(__ARM_NEON)

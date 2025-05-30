@@ -16,7 +16,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     if (Size % sizeof(::Pixel) != 0) {
         // Or alternatively, could calculate num_pixels based on floor(Size / sizeof(::Pixel))
         // and only pass that many. For stricter fuzzing, returning if not aligned might be intended.
-        return 0;
+        return 0; 
     }
 
     size_t num_pixels = Size / sizeof(::Pixel);
@@ -26,12 +26,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     if (num_pixels > MAX_FUZZ_PIXELS) {
         num_pixels = MAX_FUZZ_PIXELS;
     }
-
+    
     std::vector<uint8_t> rgba_output(num_pixels * 4);
     // Data is cast to const ::Pixel*. The function will read num_pixels from this array.
     // This is safe because num_pixels was derived from Size / sizeof(::Pixel).
     // If num_pixels was capped, it processes a sub-segment.
-    internal_swizzle_bgra_to_rgba_simd(reinterpret_cast<const ::Pixel*>(Data), rgba_output.data(), num_pixels);
-
+    BmpTool::internal_swizzle_bgra_to_rgba_simd(reinterpret_cast<const ::Pixel*>(Data), rgba_output.data(), num_pixels);
+    
     return 0;
 }

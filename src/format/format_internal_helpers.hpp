@@ -2,7 +2,7 @@
 
 #include <cstddef> // For size_t
 // Include bitmap.h for the definition of ::Pixel
-#include "../bitmap/bitmap.h"
+#include "../bitmap/bitmap.h" 
 
 namespace BmpTool {
 

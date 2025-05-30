@@ -30,7 +30,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     // It will read num_pixels * 4 bytes from Data.
     // This is safe as num_pixels was derived from Size / 4.
     // If num_pixels was capped, it processes a sub-segment.
-    internal_swizzle_rgba_to_bgra_simd(Data, bgra_output.data(), num_pixels);
-
+    BmpTool::internal_swizzle_rgba_to_bgra_simd(Data, bgra_output.data(), num_pixels);
+    
     return 0;
 }
