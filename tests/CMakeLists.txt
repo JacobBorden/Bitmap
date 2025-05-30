@@ -9,6 +9,7 @@ set(TEST_SOURCES
     test_bitmap.cpp
     test_bitmap_file.cpp
     test_matrix.cpp
+    test_swizzle.cpp # <-- Add this line
     tests_main.cpp
     api_roundtrip.cpp
 )
@@ -60,6 +61,24 @@ if(ENABLE_FUZZING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_link_libraries(fuzz_matrix PRIVATE bitmap)
   set_target_properties(fuzz_matrix PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
   message(STATUS "Fuzz target fuzz_matrix added.")
+
+  # Fuzzer for BGR to BGRA conversion
+  add_executable(fuzz_convert_bgr_to_bgra fuzz/fuzz_convert_bgr_to_bgra.cpp)
+  target_link_libraries(fuzz_convert_bgr_to_bgra PRIVATE bitmap)
+  set_target_properties(fuzz_convert_bgr_to_bgra PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_convert_bgr_to_bgra added.")
+
+  # Fuzzer for BGRA to RGBA swizzle
+  add_executable(fuzz_swizzle_bgra_to_rgba fuzz/fuzz_swizzle_bgra_to_rgba.cpp)
+  target_link_libraries(fuzz_swizzle_bgra_to_rgba PRIVATE bitmap)
+  set_target_properties(fuzz_swizzle_bgra_to_rgba PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_swizzle_bgra_to_rgba added.")
+
+  # Fuzzer for RGBA to BGRA swizzle
+  add_executable(fuzz_swizzle_rgba_to_bgra fuzz/fuzz_swizzle_rgba_to_bgra.cpp)
+  target_link_libraries(fuzz_swizzle_rgba_to_bgra PRIVATE bitmap)
+  set_target_properties(fuzz_swizzle_rgba_to_bgra PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_swizzle_rgba_to_bgra added.")
   
 endif()
 # Note: The public include directories from the 'bitmap' target 

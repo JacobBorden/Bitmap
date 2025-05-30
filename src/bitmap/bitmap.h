@@ -417,4 +417,7 @@ Pixel ApplySepiaToPixel(Pixel pixel);
 
 // Note: Box blur is applied over a region within ApplyBoxBlur,
 // so it does not have a direct single-pixel helper function here.
+
+// Helper function for BGR to BGRA conversion (primarily for testing)
+void internal_convert_bgr_to_bgra_simd(const uint8_t* src_bgr_data, ::Pixel* dest_bgra_pixels, size_t num_pixels);
 #endif

@@ -2,6 +2,8 @@
 #include <iostream>  // For standard I/O (though not explicitly used in this file's current state).
 #include <algorithm> // For std::min and std::max, used in ApplyBoxBlur and color adjustments.
 #include <vector>    // For std::vector, used by Matrix class and underlying bitmap data.
+#include <cstring>   // For std::memcpy, used in SIMD NEON path
+#include "../simd_utils.hpp" // Added include
 
 // Define BI_RGB as 0 if not already defined, to ensure cross-platform compatibility for bitmap compression type.
 #ifndef BI_RGB
@@ -183,6 +185,73 @@ Bitmap::File ApplyBoxBlur(Bitmap::File bitmapFile, int blurRadius)
     return CreateBitmapFromMatrix(blurredMatrix);
 }
 
+// Helper function for BGR to BGRA conversion with SIMD (declaration in bitmap.h)
+void internal_convert_bgr_to_bgra_simd(const uint8_t* src_row_bgr_ptr, ::Pixel* dest_row_pixel_ptr, size_t num_pixels_in_row) {
+    size_t current_src_byte_offset = 0;
+    size_t current_dest_pixel_idx = 0;
+    size_t num_pixels_to_process = num_pixels_in_row;
+
+#if defined(__AVX2__)
+    // As per previous implementation, AVX2 uses SSSE3 logic.
+    // No distinct 256-bit AVX2 path implemented here.
+#endif
+
+#if defined(__AVX2__) || defined(__SSSE3__) // Use SSSE3 for AVX2 as well if no specific AVX2 code
+    const size_t pixels_per_step = 4; 
+    __m128i bgr_to_bgrX_mask = _mm_setr_epi8(
+        0, 1, 2, (char)0x80, 
+        3, 4, 5, (char)0x80, 
+        6, 7, 8, (char)0x80, 
+        9, 10, 11, (char)0x80 
+    );
+    __m128i alpha_channel_ff = _mm_setr_epi8(
+        0,0,0, (char)0xFF, 0,0,0,(char)0xFF, 0,0,0,(char)0xFF, 0,0,0,(char)0xFF
+    );
+
+    while (num_pixels_to_process >= pixels_per_step) {
+        __m128i bgr_data = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_row_bgr_ptr + current_src_byte_offset));
+        __m128i bgra_pixels_expanded = _mm_shuffle_epi8(bgr_data, bgr_to_bgrX_mask);
+        __m128i bgra_pixels_final = _mm_or_si128(bgra_pixels_expanded, alpha_channel_ff);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dest_row_pixel_ptr + current_dest_pixel_idx), bgra_pixels_final);
+        current_src_byte_offset += pixels_per_step * 3; 
+        current_dest_pixel_idx += pixels_per_step;    
+        num_pixels_to_process -= pixels_per_step;
+    }
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+    const size_t pixels_per_step = 4;
+    const uint8_t table_bgr_to_bgr0[] = {0,1,2,16, 3,4,5,16, 6,7,8,16, 9,10,11,16}; 
+    uint8x16_t neon_shuffle_table = vld1q_u8(table_bgr_to_bgr0);
+    const uint8_t alpha_bytes[] = {0,0,0,0xFF, 0,0,0,0xFF, 0,0,0,0xFF, 0,0,0,0xFF};
+    uint8x16_t alpha_channel_ff_neon = vld1q_u8(alpha_bytes);
+    uint8_t temp_bgr_load[16];
+
+    while (num_pixels_to_process >= pixels_per_step) {
+        std::memcpy(temp_bgr_load, src_row_bgr_ptr + current_src_byte_offset, 12);
+        uint8x16_t bgr_data_loaded = vld1q_u8(temp_bgr_load);
+        uint8x16_t bgra_expanded = vqtbl1q_u8(bgr_data_loaded, neon_shuffle_table);
+        uint8x16_t bgra_final = vorrq_u8(bgra_expanded, alpha_channel_ff_neon);
+        vst1q_u8(reinterpret_cast<uint8_t*>(dest_row_pixel_ptr + current_dest_pixel_idx), bgra_final);
+        current_src_byte_offset += pixels_per_step * 3;
+        current_dest_pixel_idx += pixels_per_step;
+        num_pixels_to_process -= pixels_per_step;
+    }
+#else 
+    // This #else block ensures that if no SIMD path is taken (e.g. SSSE3/NEON not defined, or AVX2 defined but its specific block is empty and it's not grouped with SSSE3),
+    // the scalar loop below is the ONLY path for processing.
+    // The current structure with #if defined(__AVX2__) || defined(__SSSE3__) followed by #elif defined(__ARM_NEON)
+    // means this #else is for when NEITHER of those are true.
+    // If AVX2 is defined, it uses the SSSE3 block. If only NEON is defined, it uses NEON block.
+    // If none are defined, it falls to the scalar loop below.
+#endif
+    // Scalar fallback for remaining pixels OR if no SIMD defined/executed above
+    for (size_t k_rem = 0; k_rem < num_pixels_to_process; ++k_rem) {
+        (dest_row_pixel_ptr + current_dest_pixel_idx + k_rem)->blue  = *(src_row_bgr_ptr + current_src_byte_offset + k_rem * 3 + 0);
+        (dest_row_pixel_ptr + current_dest_pixel_idx + k_rem)->green = *(src_row_bgr_ptr + current_src_byte_offset + k_rem * 3 + 1);
+        (dest_row_pixel_ptr + current_dest_pixel_idx + k_rem)->red   = *(src_row_bgr_ptr + current_src_byte_offset + k_rem * 3 + 2);
+        (dest_row_pixel_ptr + current_dest_pixel_idx + k_rem)->alpha = 255;
+    }
+}
+
 // Converts a Bitmap::File object (containing raw bitmap data and headers)
 // into a Matrix::Matrix<Pixel> for easier pixel manipulation.
 Matrix::Matrix<Pixel> CreateMatrixFromBitmap(Bitmap::File bitmapFile)
@@ -236,16 +305,16 @@ Matrix::Matrix<Pixel> CreateMatrixFromBitmap(Bitmap::File bitmapFile)
     }
     else if (bitmapFile.bitmapInfoHeader.biBitCount == 24) // For 24-bit bitmaps (BGR)
     {
-        int k = 0; // Index for bitmapFile.bitmapData
-        for (int i = 0; i < imageMatrix.rows(); i++)
-            for (int j = 0; j < imageMatrix.cols(); j++)
-            {
-                imageMatrix[i][j].blue = bitmapFile.bitmapData[k];
-                imageMatrix[i][j].green = bitmapFile.bitmapData[k + 1];
-                imageMatrix[i][j].red = bitmapFile.bitmapData[k + 2];
-                imageMatrix[i][j].alpha = 0; // Default alpha to 0 (opaque) for 24-bit images.
-                k += 3; // Move to the next pixel (3 bytes)
-            }
+        // Calculate padding if necessary, though source data in bitmapFile.bitmapData should be packed according to BMP spec (rows padded to 4 bytes)
+        // However, we process pixel by pixel here from the linear bitmapData.
+        // The number of bytes per row in source data:
+        uint32_t src_bytes_per_row = (static_cast<uint32_t>(imageMatrix.cols()) * 3 + 3) & ~3u; // BMP rows are padded to 4 bytes for BGR
+
+        for (int i = 0; i < imageMatrix.rows(); i++) {
+            const uint8_t* src_row_bgr_ptr = bitmapFile.bitmapData.data() + (static_cast<size_t>(i) * src_bytes_per_row);
+            ::Pixel* dest_row_pixel_ptr = &imageMatrix[i][0];
+            internal_convert_bgr_to_bgra_simd(src_row_bgr_ptr, dest_row_pixel_ptr, imageMatrix.cols());
+        }
     }
     // Note: Other bit depths (e.g., 1, 4, 8, 16-bit) would require more complex handling.
 

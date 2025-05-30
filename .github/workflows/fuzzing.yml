@@ -36,6 +36,9 @@ jobs:
         mkdir -p build_fuzz/corpus_fuzzing/fuzz_bitmap_file_corpus
         mkdir -p build_fuzz/corpus_fuzzing/fuzz_image_operations_corpus
         mkdir -p build_fuzz/corpus_fuzzing/fuzz_matrix_corpus
+        mkdir -p build_fuzz/corpus_fuzzing/fuzz_convert_bgr_to_bgra_corpus
+        mkdir -p build_fuzz/corpus_fuzzing/fuzz_swizzle_bgra_to_rgba_corpus
+        mkdir -p build_fuzz/corpus_fuzzing/fuzz_swizzle_rgba_to_bgra_corpus
 
     - name: Run fuzz_bitmap
       run: |
@@ -56,3 +59,15 @@ jobs:
     - name: Run fuzz_matrix
       run: |
         ./build_fuzz/tests/fuzz_matrix -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_matrix_corpus/
+    
+    - name: Run fuzz_convert_bgr_to_bgra
+      run: |
+        ./build_fuzz/tests/fuzz_convert_bgr_to_bgra -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_convert_bgr_to_bgra_corpus/
+    
+    - name: Run fuzz_swizzle_bgra_to_rgba
+      run: |
+        ./build_fuzz/tests/fuzz_swizzle_bgra_to_rgba -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_swizzle_bgra_to_rgba_corpus/
+
+    - name: Run fuzz_swizzle_rgba_to_bgra
+      run: |
+        ./build_fuzz/tests/fuzz_swizzle_rgba_to_bgra -max_total_time=60 -print_final_stats=1 -print_pcs=1 -error_exitcode=1 build_fuzz/corpus_fuzzing/fuzz_swizzle_rgba_to_bgra_corpus/
