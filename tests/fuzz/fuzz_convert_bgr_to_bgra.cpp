@@ -29,6 +29,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     // This is safe because num_pixels was derived from Size/3.
     // If num_pixels was capped by MAX_FUZZ_PIXELS, it reads a sub-segment of the original data.
     internal_convert_bgr_to_bgra_simd(Data, output_pixels.data(), num_pixels);
-    
+
     return 0; // Non-zero return values are reserved for future use.
 }

@@ -352,7 +352,7 @@ void internal_swizzle_rgba_to_bgra_simd(const uint8_t* src_rgba_data, ::Pixel* d
     for (size_t i = 0; i < num_pixels_to_process; ++i) {
         const uint8_t* src_pixel_ptr = src_rgba_data + (current_pixel_idx + i) * 4;
         ::Pixel& dest_pixel = *(dest_bgra_pixels + current_pixel_idx + i);
-        
+
         dest_pixel.red   = src_pixel_ptr[0]; // R
         dest_pixel.green = src_pixel_ptr[1]; // G
         dest_pixel.blue  = src_pixel_ptr[2]; // B
