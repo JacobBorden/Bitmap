@@ -12,6 +12,8 @@
 #include "../../src/bitmapfile/bitmap_file.h" // For BITMAPFILEHEADER, BITMAPINFOHEADER from external lib
 #include "../../src/bitmap/bitmap.h"         // For ::Pixel, ::CreateMatrixFromBitmap, ::CreateBitmapFromMatrix
 #include "../../src/matrix/matrix.h"         // For Matrix::Matrix
+#include "../simd_utils.hpp" // Added include
+#include "format_internal_helpers.hpp" // Added include for the new helpers
 
 // Define constants for BMP format (can be used by Format::Internal helpers or if save needs them directly)
 constexpr uint16_t BMP_MAGIC_TYPE_CONST = 0x4D42; // 'BM'
@@ -150,19 +152,71 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     bmp_out.bpp = 32; 
     bmp_out.data.resize(static_cast<size_t>(bmp_out.w) * bmp_out.h * 4);
 
+    // The loop converting image_matrix to bmp_out.data
+    // bmp_out.data is already resized.
     for (uint32_t y = 0; y < bmp_out.h; ++y) {
-        for (uint32_t x = 0; x < bmp_out.w; ++x) {
-            const ::Pixel& src_pixel = image_matrix.at(y, x); // Changed Get(x,y) to at(y,x)
-            
-            size_t dest_idx = (static_cast<size_t>(y) * bmp_out.w + x) * 4;
-            bmp_out.data[dest_idx + 0] = src_pixel.red;   
-            bmp_out.data[dest_idx + 1] = src_pixel.green; 
-            bmp_out.data[dest_idx + 2] = src_pixel.blue;  
-            bmp_out.data[dest_idx + 3] = src_pixel.alpha; 
-        }
+        const ::Pixel* src_bgra_pixels_row = &image_matrix[y][0];
+        uint8_t* dest_rgba_data_row = bmp_out.data.data() + (static_cast<size_t>(y) * bmp_out.w * 4);
+        internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, bmp_out.w);
     }
     return bmp_out;
 }
+
+
+// Helper function to convert an array of ::Pixel (BGRA order) to an array of uint8_t (RGBA order)
+void internal_swizzle_bgra_to_rgba_simd(const ::Pixel* src_bgra_pixels, uint8_t* dest_rgba_data, size_t num_pixels) {
+    size_t current_pixel_idx = 0;
+    size_t num_pixels_to_process = num_pixels;
+
+#if defined(__AVX2__)
+    const size_t pixels_per_step = 8; // 8 pixels = 32 bytes
+    __m256i shuffle_mask_bgra_to_rgba = _mm256_setr_epi8(
+        2, 1, 0, 3,  6, 5, 4, 7,  10, 9, 8, 11,  14,13,12,15, // First 4 pixels (16 bytes)
+        18,17,16,19, 22,21,20,23, 26,25,24,27, 30,29,28,31  // Next 4 pixels (16 bytes)
+    );
+    while (num_pixels_to_process >= pixels_per_step) {
+        __m256i bgra_pixels_loaded = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src_bgra_pixels + current_pixel_idx));
+        __m256i rgba_pixels = _mm256_shuffle_epi8(bgra_pixels_loaded, shuffle_mask_bgra_to_rgba);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest_rgba_data + current_pixel_idx * 4), rgba_pixels);
+        current_pixel_idx += pixels_per_step;
+        num_pixels_to_process -= pixels_per_step;
+    }
+#elif defined(__SSSE3__) // _mm_shuffle_epi8 requires SSSE3
+    const size_t pixels_per_step = 4; // 4 pixels = 16 bytes
+    __m128i shuffle_mask_bgra_to_rgba = _mm_setr_epi8(
+        2, 1, 0, 3,  6, 5, 4, 7,  10, 9, 8, 11,  14,13,12,15
+    );
+    while (num_pixels_to_process >= pixels_per_step) {
+        __m128i bgra_pixels_loaded = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_bgra_pixels + current_pixel_idx));
+        __m128i rgba_pixels = _mm_shuffle_epi8(bgra_pixels_loaded, shuffle_mask_bgra_to_rgba);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dest_rgba_data + current_pixel_idx * 4), rgba_pixels);
+        current_pixel_idx += pixels_per_step;
+        num_pixels_to_process -= pixels_per_step;
+    }
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+    const size_t pixels_per_step = 4; // 4 pixels = 16 bytes using uint8x16_t
+    const uint8_t shuffle_coeffs_array[] = {2,1,0,3, 6,5,4,7, 10,9,8,11, 14,13,12,15};
+    uint8x16_t neon_shuffle_mask = vld1q_u8(shuffle_coeffs_array);
+
+    while (num_pixels_to_process >= pixels_per_step) {
+        uint8x16_t bgra_pixels_loaded = vld1q_u8(reinterpret_cast<const uint8_t*>(src_bgra_pixels + current_pixel_idx));
+        uint8x16_t rgba_pixels = vqtbl1q_u8(bgra_pixels_loaded, neon_shuffle_mask);
+        vst1q_u8(dest_rgba_data + current_pixel_idx * 4, rgba_pixels);
+        current_pixel_idx += pixels_per_step;
+        num_pixels_to_process -= pixels_per_step;
+    }
+#endif
+    // Scalar fallback for remaining pixels in the row
+    for (size_t i = 0; i < num_pixels_to_process; ++i) {
+        const ::Pixel& src_pixel = *(src_bgra_pixels + current_pixel_idx + i);
+        uint8_t* dest_pixel_ptr = dest_rgba_data + (current_pixel_idx + i) * 4;
+        dest_pixel_ptr[0] = src_pixel.red;   // R
+        dest_pixel_ptr[1] = src_pixel.green; // G
+        dest_pixel_ptr[2] = src_pixel.blue;  // B
+        dest_pixel_ptr[3] = src_pixel.alpha; // A
+    }
+}
+
 
 // The NEW BmpTool::save function using the external library
 Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_bmp_buffer) {
@@ -185,17 +239,12 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
     // Assuming ::Pixel struct has members .red, .green, .blue, .alpha
     Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // Changed order to (rows, cols)
 
+    // The loop converting bitmap_in.data to image_matrix
+    // image_matrix is already sized.
     for (uint32_t y = 0; y < bitmap_in.h; ++y) {
-        for (uint32_t x = 0; x < bitmap_in.w; ++x) {
-            const uint8_t* src_pixel_ptr = &bitmap_in.data[(static_cast<size_t>(y) * bitmap_in.w + x) * 4]; // RGBA
-            ::Pixel dest_pixel; 
-            dest_pixel.red   = src_pixel_ptr[0];
-            dest_pixel.green = src_pixel_ptr[1];
-            dest_pixel.blue  = src_pixel_ptr[2];
-            dest_pixel.alpha = src_pixel_ptr[3];
-            
-            image_matrix.at(y, x) = dest_pixel; // Changed Set(x,y) to at(y,x)
-        }
+        const uint8_t* src_rgba_data_row = &bitmap_in.data[(static_cast<size_t>(y) * bitmap_in.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bitmap_in.w);
     }
 
     // 3. Convert Matrix<::Pixel> to ::Bitmap::File
@@ -253,6 +302,62 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
 
     // 5. Return
     return BmpTool::Success{}; // This will implicitly convert to Result<void, BitmapError>(Success{})
+}
+
+
+// Helper function to convert an array of uint8_t (RGBA order) to an array of ::Pixel (BGRA order)
+void internal_swizzle_rgba_to_bgra_simd(const uint8_t* src_rgba_data, ::Pixel* dest_bgra_pixels, size_t num_pixels) {
+    size_t current_pixel_idx = 0;
+    size_t num_pixels_to_process = num_pixels;
+
+#if defined(__AVX2__)
+    const size_t pixels_per_step = 8; // 8 pixels = 32 bytes
+    __m256i shuffle_mask_rgba_to_bgra = _mm256_setr_epi8(
+        2, 1, 0, 3,  6, 5, 4, 7,  10, 9, 8, 11,  14,13,12,15,
+        18,17,16,19, 22,21,20,23, 26,25,24,27, 30,29,28,31
+    );
+    while (num_pixels_to_process >= pixels_per_step) {
+        __m256i rgba_pixels_loaded = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src_rgba_data + current_pixel_idx * 4));
+        __m256i bgra_pixels = _mm256_shuffle_epi8(rgba_pixels_loaded, shuffle_mask_rgba_to_bgra);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(dest_bgra_pixels + current_pixel_idx), bgra_pixels);
+        current_pixel_idx += pixels_per_step;
+        num_pixels_to_process -= pixels_per_step;
+    }
+#elif defined(__SSSE3__) // _mm_shuffle_epi8 requires SSSE3
+    const size_t pixels_per_step = 4; // 4 pixels = 16 bytes
+    __m128i shuffle_mask_rgba_to_bgra = _mm_setr_epi8(
+        2, 1, 0, 3,  6, 5, 4, 7,  10, 9, 8, 11,  14,13,12,15
+    );
+    while (num_pixels_to_process >= pixels_per_step) {
+        __m128i rgba_pixels_loaded = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_rgba_data + current_pixel_idx * 4));
+        __m128i bgra_pixels = _mm_shuffle_epi8(rgba_pixels_loaded, shuffle_mask_rgba_to_bgra);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dest_bgra_pixels + current_pixel_idx), bgra_pixels);
+        current_pixel_idx += pixels_per_step;
+        num_pixels_to_process -= pixels_per_step;
+    }
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+    const size_t pixels_per_step = 4; // 4 pixels = 16 bytes
+    const uint8_t shuffle_coeffs_array[] = {2,1,0,3, 6,5,4,7, 10,9,8,11, 14,13,12,15};
+    uint8x16_t neon_shuffle_mask = vld1q_u8(shuffle_coeffs_array);
+
+    while (num_pixels_to_process >= pixels_per_step) {
+        uint8x16_t rgba_pixels_loaded = vld1q_u8(src_rgba_data + current_pixel_idx * 4);
+        uint8x16_t bgra_pixels = vqtbl1q_u8(rgba_pixels_loaded, neon_shuffle_mask);
+        vst1q_u8(reinterpret_cast<uint8_t*>(dest_bgra_pixels + current_pixel_idx), bgra_pixels);
+        current_pixel_idx += pixels_per_step;
+        num_pixels_to_process -= pixels_per_step;
+    }
+#endif
+    // Scalar fallback for remaining pixels in the row
+    for (size_t i = 0; i < num_pixels_to_process; ++i) {
+        const uint8_t* src_pixel_ptr = src_rgba_data + (current_pixel_idx + i) * 4;
+        ::Pixel& dest_pixel = *(dest_bgra_pixels + current_pixel_idx + i);
+        
+        dest_pixel.red   = src_pixel_ptr[0]; // R
+        dest_pixel.green = src_pixel_ptr[1]; // G
+        dest_pixel.blue  = src_pixel_ptr[2]; // B
+        dest_pixel.alpha = src_pixel_ptr[3]; // A
+    }
 }
 
 } // namespace BmpTool
