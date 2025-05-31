@@ -194,4 +194,189 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data);
  */
 Result<void, BitmapError> save(const Bitmap& bitmap, std::span<uint8_t> out_bmp_buffer);
 
+/**
+ * @brief Shrinks the image by a given scale factor.
+ * @param bitmap The input bitmap.
+ * @param scaleFactor The factor by which to shrink the image (e.g., 2 for half size). Must be positive.
+ * @return Result containing the shrunken bitmap or an error.
+ */
+Result<Bitmap, BitmapError> shrink(const Bitmap& bitmap, int scaleFactor);
+
+/**
+ * @brief Rotates the image 90 degrees counter-clockwise.
+ * @param bitmap The input bitmap.
+ * @return Result containing the rotated bitmap or an error.
+ */
+Result<Bitmap, BitmapError> rotateCounterClockwise(const Bitmap& bitmap);
+
+/**
+ * @brief Rotates the image 90 degrees clockwise.
+ * @param bitmap The input bitmap.
+ * @return Result containing the rotated bitmap or an error.
+ */
+Result<Bitmap, BitmapError> rotateClockwise(const Bitmap& bitmap);
+
+/**
+ * @brief Mirrors the image horizontally.
+ * @param bitmap The input bitmap.
+ * @return Result containing the mirrored bitmap or an error.
+ */
+Result<Bitmap, BitmapError> mirror(const Bitmap& bitmap);
+
+/**
+ * @brief Flips the image vertically.
+ * @param bitmap The input bitmap.
+ * @return Result containing the flipped bitmap or an error.
+ */
+Result<Bitmap, BitmapError> flip(const Bitmap& bitmap);
+
+/**
+ * @brief Converts the image to greyscale.
+ * @param bitmap The input bitmap.
+ * @return Result containing the greyscale bitmap or an error.
+ */
+Result<Bitmap, BitmapError> greyscale(const Bitmap& bitmap);
+
+/**
+ * @brief Changes the overall brightness of the image.
+ * @param bitmap The input bitmap.
+ * @param brightness The brightness factor (e.g., 1.0 for no change, >1.0 for brighter, <1.0 for darker).
+ * @return Result containing the bitmap with adjusted brightness or an error.
+ */
+Result<Bitmap, BitmapError> changeBrightness(const Bitmap& bitmap, float brightness);
+
+/**
+ * @brief Changes the overall contrast of the image.
+ * @param bitmap The input bitmap.
+ * @param contrast The contrast factor (e.g., 1.0 for no change).
+ * @return Result containing the bitmap with adjusted contrast or an error.
+ */
+Result<Bitmap, BitmapError> changeContrast(const Bitmap& bitmap, float contrast);
+
+/**
+ * @brief Changes the overall saturation of the image.
+ * @param bitmap The input bitmap.
+ * @param saturation The saturation factor (e.g., 1.0 for no change, >1.0 for more saturated, <1.0 for less saturated).
+ * @return Result containing the bitmap with adjusted saturation or an error.
+ */
+Result<Bitmap, BitmapError> changeSaturation(const Bitmap& bitmap, float saturation);
+
+/**
+ * @brief Changes the saturation of the blue channel in the image.
+ * @param bitmap The input bitmap.
+ * @param saturation The saturation factor for the blue channel.
+ * @return Result containing the bitmap with adjusted blue channel saturation or an error.
+ */
+Result<Bitmap, BitmapError> changeSaturationBlue(const Bitmap& bitmap, float saturation);
+
+/**
+ * @brief Changes the saturation of the green channel in the image.
+ * @param bitmap The input bitmap.
+ * @param saturation The saturation factor for the green channel.
+ * @return Result containing the bitmap with adjusted green channel saturation or an error.
+ */
+Result<Bitmap, BitmapError> changeSaturationGreen(const Bitmap& bitmap, float saturation);
+
+/**
+ * @brief Changes the saturation of the red channel in the image.
+ * @param bitmap The input bitmap.
+ * @param saturation The saturation factor for the red channel.
+ * @return Result containing the bitmap with adjusted red channel saturation or an error.
+ */
+Result<Bitmap, BitmapError> changeSaturationRed(const Bitmap& bitmap, float saturation);
+
+/**
+ * @brief Changes the saturation of the magenta component (red and blue channels) in the image.
+ * @param bitmap The input bitmap.
+ * @param saturation The saturation factor for magenta.
+ * @return Result containing the bitmap with adjusted magenta saturation or an error.
+ */
+Result<Bitmap, BitmapError> changeSaturationMagenta(const Bitmap& bitmap, float saturation);
+
+/**
+ * @brief Changes the saturation of the yellow component (red and green channels) in the image.
+ * @param bitmap The input bitmap.
+ * @param saturation The saturation factor for yellow.
+ * @return Result containing the bitmap with adjusted yellow saturation or an error.
+ */
+Result<Bitmap, BitmapError> changeSaturationYellow(const Bitmap& bitmap, float saturation);
+
+/**
+ * @brief Changes the saturation of the cyan component (green and blue channels) in the image.
+ * @param bitmap The input bitmap.
+ * @param saturation The saturation factor for cyan.
+ * @return Result containing the bitmap with adjusted cyan saturation or an error.
+ */
+Result<Bitmap, BitmapError> changeSaturationCyan(const Bitmap& bitmap, float saturation);
+
+/**
+ * @brief Changes the luminance of the blue channel in the image.
+ * @param bitmap The input bitmap.
+ * @param luminance The luminance factor for the blue channel.
+ * @return Result containing the bitmap with adjusted blue channel luminance or an error.
+ */
+Result<Bitmap, BitmapError> changeLuminanceBlue(const Bitmap& bitmap, float luminance);
+
+/**
+ * @brief Changes the luminance of the green channel in the image.
+ * @param bitmap The input bitmap.
+ * @param luminance The luminance factor for the green channel.
+ * @return Result containing the bitmap with adjusted green channel luminance or an error.
+ */
+Result<Bitmap, BitmapError> changeLuminanceGreen(const Bitmap& bitmap, float luminance);
+
+/**
+ * @brief Changes the luminance of the red channel in the image.
+ * @param bitmap The input bitmap.
+ * @param luminance The luminance factor for the red channel.
+ * @return Result containing the bitmap with adjusted red channel luminance or an error.
+ */
+Result<Bitmap, BitmapError> changeLuminanceRed(const Bitmap& bitmap, float luminance);
+
+/**
+ * @brief Changes the luminance of the magenta component (red and blue channels) in the image.
+ * @param bitmap The input bitmap.
+ * @param luminance The luminance factor for magenta.
+ * @return Result containing the bitmap with adjusted magenta luminance or an error.
+ */
+Result<Bitmap, BitmapError> changeLuminanceMagenta(const Bitmap& bitmap, float luminance);
+
+/**
+ * @brief Changes the luminance of the yellow component (red and green channels) in the image.
+ * @param bitmap The input bitmap.
+ * @param luminance The luminance factor for yellow.
+ * @return Result containing the bitmap with adjusted yellow luminance or an error.
+ */
+Result<Bitmap, BitmapError> changeLuminanceYellow(const Bitmap& bitmap, float luminance);
+
+/**
+ * @brief Changes the luminance of the cyan component (green and blue channels) in the image.
+ * @param bitmap The input bitmap.
+ * @param luminance The luminance factor for cyan.
+ * @return Result containing the bitmap with adjusted cyan luminance or an error.
+ */
+Result<Bitmap, BitmapError> changeLuminanceCyan(const Bitmap& bitmap, float luminance);
+
+/**
+ * @brief Inverts the colors of the image.
+ * @param bitmap The input bitmap.
+ * @return Result containing the inverted bitmap or an error.
+ */
+Result<Bitmap, BitmapError> invertColors(const Bitmap& bitmap);
+
+/**
+ * @brief Applies a sepia tone to the image.
+ * @param bitmap The input bitmap.
+ * @return Result containing the sepia toned bitmap or an error.
+ */
+Result<Bitmap, BitmapError> applySepiaTone(const Bitmap& bitmap);
+
+/**
+ * @brief Applies a box blur to the image.
+ * @param bitmap The input bitmap.
+ * @param blurRadius The radius of the blur box (e.g., 1 for a 3x3 box). Defaults to 1. Must be non-negative.
+ * @return Result containing the blurred bitmap or an error.
+ */
+Result<Bitmap, BitmapError> applyBoxBlur(const Bitmap& bitmap, int blurRadius = 1);
+
 } // namespace BmpTool

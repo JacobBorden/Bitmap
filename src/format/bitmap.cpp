@@ -3,165 +3,154 @@
 #include <cstring> // For std::memcpy
 #include <algorithm> // For std::min, std::max (potentially)
 #include <stdexcept> // For robust error checking if needed beyond enums
+#include <limits>    // Required for std::numeric_limits
 
 // Own project includes
 #include "../../include/bitmap.hpp" // For BmpTool::Bitmap, Result, BitmapError
-#include "bitmap_internal.hpp"    // For BmpTool::Format::Internal structures and helpers
+#include "format_internal_helpers.hpp" // Re-added include
 
 // External library includes (as per task)
 #include "../../src/bitmapfile/bitmap_file.h" // For BITMAPFILEHEADER, BITMAPINFOHEADER from external lib
 #include "../../src/bitmap/bitmap.h"         // For ::Pixel, ::CreateMatrixFromBitmap, ::CreateBitmapFromMatrix
 #include "../../src/matrix/matrix.h"         // For Matrix::Matrix
 #include "../simd_utils.hpp" // Added include
-#include "format_internal_helpers.hpp" // Added include for the new helpers
 
 // Define constants for BMP format (can be used by Format::Internal helpers or if save needs them directly)
+// These constants are still used by the load function.
 constexpr uint16_t BMP_MAGIC_TYPE_CONST = 0x4D42; // 'BM'
 constexpr uint32_t BI_RGB_CONST = 0; // No compression
 
 namespace BmpTool {
 
-// Namespace for internal helper functions and structures, kept for potential future use
-// or if other parts of the library (not modified here) depend on them.
-namespace Format {
-namespace Internal {
+// Forward declarations removed, now using format_internal_helpers.hpp
 
-bool validateHeaders(const InternalBitmapFileHeader& fileHeader, const InternalBitmapInfoHeader& infoHeader) {
-    if (fileHeader.bfType != BMP_MAGIC_TYPE_CONST) {
-        return false; 
-    }
-    if (infoHeader.biPlanes != 1) {
-        return false; 
-    }
-    if (infoHeader.biCompression != BI_RGB_CONST) {
-        return false; 
-    }
-    if (infoHeader.biBitCount != 24 && infoHeader.biBitCount != 32) {
-        return false; 
-    }
-    if (infoHeader.biWidth <= 0 || infoHeader.biHeight == 0) { 
-        return false; 
-    }
-    if (fileHeader.bfOffBits < (sizeof(InternalBitmapFileHeader) + infoHeader.biSize)) {
-      // This check is simplified. A full check would also consider bfOffBits < fileHeader.bfSize
-    }
-    if((infoHeader.biWidth * infoHeader.biHeight) > std::numeric_limits<size_t>::max()) {
-        return false; // Prevent overflow in size calculations
-    }
-    return true;
-}
+// The BmpTool::Format::Internal namespace and its functions are removed as they are no longer used.
 
-uint32_t calculateRowPadding(uint32_t width, uint16_t bpp) {
-    uint32_t bytes_per_row_unpadded = (width * bpp) / 8;
-    uint32_t remainder = bytes_per_row_unpadded % 4;
-    if (remainder == 0) {
-        return 0;
-    }
-    return 4 - remainder;
-}
-
-} // namespace Internal
-} // namespace Format
-
-// The BmpTool::load function (modified in the previous step, using external library)
 Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
-    // 1. Parse Input Span (Manual BMP Header Parsing)
-    if (bmp_data.size() < sizeof(BITMAPFILEHEADER)) { // Using external lib's BITMAPFILEHEADER
+    // 1. Read BITMAPFILEHEADER and BITMAPINFOHEADER
+    if (bmp_data.size() < sizeof(BITMAPFILEHEADER)) {
         return BitmapError::InvalidFileHeader;
     }
-    BITMAPFILEHEADER fh; 
+    BITMAPFILEHEADER fh;
     std::memcpy(&fh, bmp_data.data(), sizeof(BITMAPFILEHEADER));
 
-    if (bmp_data.size() < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)) { // Using external lib's BITMAPINFOHEADER
+    if (bmp_data.size() < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)) {
         return BitmapError::InvalidImageHeader;
     }
-    BITMAPINFOHEADER ih; 
+    BITMAPINFOHEADER ih;
     std::memcpy(&ih, bmp_data.data() + sizeof(BITMAPFILEHEADER), sizeof(BITMAPINFOHEADER));
 
-    // Basic Validations
-    if (fh.bfType != BMP_MAGIC_TYPE_CONST) { // 'BM'
+    // 2. Perform essential early checks
+    if (fh.bfType != BMP_MAGIC_TYPE_CONST) {
         return BitmapError::NotABmp;
     }
-    if (ih.biCompression != BI_RGB_CONST) { 
-        return BitmapError::UnsupportedBpp; 
-    }
-    if (ih.biBitCount != 24 && ih.biBitCount != 32) {
+    if (ih.biCompression != BI_RGB_CONST) {
+        // CreateMatrixFromBitmap doesn't explicitly check this, but assumes uncompressed.
         return BitmapError::UnsupportedBpp;
     }
-    if (ih.biPlanes != 1) {
+    if (ih.biBitCount != 24 && ih.biBitCount != 32) {
+        // CreateMatrixFromBitmap checks this.
+        return BitmapError::UnsupportedBpp;
+    }
+    if (ih.biWidth <= 0 || ih.biHeight == 0) { // abs(ih.biHeight) > 0 is covered by ih.biHeight == 0
+        // CreateMatrixFromBitmap checks this via matrix dimensions.
         return BitmapError::InvalidImageHeader;
     }
-    if (fh.bfOffBits < (sizeof(BITMAPFILEHEADER) + ih.biSize) || fh.bfOffBits >= fh.bfSize || fh.bfSize > bmp_data.size()) {
+    if (fh.bfOffBits < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) || fh.bfOffBits >= bmp_data.size()) {
         return BitmapError::InvalidFileHeader;
     }
-    if (ih.biWidth <= 0 || ih.biHeight == 0) {
-        return BitmapError::InvalidImageHeader;
-    }
-    
-    long abs_height_long = ih.biHeight < 0 ? -ih.biHeight : ih.biHeight;
-    if (abs_height_long == 0) { 
-        return BitmapError::InvalidImageHeader;
-    }
-    uint32_t abs_height = static_cast<uint32_t>(abs_height_long);
+    // Check for bfOffBits + ih.biSizeImage <= bmp_data.size() if ih.biSizeImage is not zero.
+    // This check is more reliably done after calculating expected_pixel_data_size.
+    // if (ih.biSizeImage != 0 && (fh.bfOffBits + ih.biSizeImage > bmp_data.size())) {
+    //     return BitmapError::InvalidImageData;
+    // }
 
-    // 2. Populate ::Bitmap::File Object
-    ::Bitmap::File temp_bmp_file; 
+
+    // 3. Create a ::Bitmap::File object
+    ::Bitmap::File temp_bmp_file;
+
+    // 4. Assign fh and ih
     temp_bmp_file.bitmapFileHeader = fh;
     temp_bmp_file.bitmapInfoHeader = ih;
 
-    uint32_t bits_per_pixel = ih.biBitCount;
-    uint32_t bytes_per_pixel_src = bits_per_pixel / 8;
+    // 5. Calculate the expected pixel data size
+    uint32_t abs_height = (ih.biHeight < 0) ? -static_cast<uint32_t>(ih.biHeight) : static_cast<uint32_t>(ih.biHeight);
+    if (abs_height == 0) { // Should have been caught by ih.biHeight == 0, but defensive check.
+        return BitmapError::InvalidImageHeader;
+    }
+    uint32_t bytes_per_pixel_src = ih.biBitCount / 8;
     uint32_t unpadded_row_size_src = ih.biWidth * bytes_per_pixel_src;
-    uint32_t padded_row_size_src = (unpadded_row_size_src + 3) & (~3); 
 
+    // Use Format::Internal::calculateRowPadding or replicate logic if we decide to remove the namespace entirely later
+    // For now, let's assume calculateRowPadding is available or we can inline its logic if needed.
+    // uint32_t padding_per_row = Format::Internal::calculateRowPadding(ih.biWidth, ih.biBitCount);
+    // uint32_t padded_row_size_src = unpadded_row_size_src + padding_per_row;
+    // More direct calculation for padded_row_size_src:
+    uint32_t padded_row_size_src = (unpadded_row_size_src + 3) & (~3);
+
+    // Prevent overflow for expected_pixel_data_size calculation
+    if (abs_height > 0 && padded_row_size_src > (std::numeric_limits<uint32_t>::max() / abs_height) ) {
+        return BitmapError::InvalidImageData; // Calculation would overflow
+    }
     uint32_t expected_pixel_data_size = padded_row_size_src * abs_height;
 
-    if (ih.biSizeImage != 0 && ih.biSizeImage != expected_pixel_data_size) {
-        if (ih.biSizeImage < expected_pixel_data_size) {
-            return BitmapError::InvalidImageData;
-        }
-    }
-
-    if (fh.bfOffBits + expected_pixel_data_size > fh.bfSize) {
-        return BitmapError::InvalidImageData; 
-    }
+    // 6. Check if fh.bfOffBits + expected_pixel_data_size <= bmp_data.size()
     if (fh.bfOffBits + expected_pixel_data_size > bmp_data.size()) {
-        return BitmapError::InvalidImageData; 
+        // This also covers the case where ih.biSizeImage might be 0 or incorrect,
+        // relying on calculated size.
+        return BitmapError::InvalidImageData;
     }
 
-        // Remove invalid check using bmp_data.data().width() and MAX_SIZE_T
-        // The intent is to prevent overflow in size calculation, so use a safe check:
-        if (abs_height != 0 && ih.biWidth > (std::numeric_limits<size_t>::max() / abs_height)) {
-            return BitmapError::InvalidImageData; // Prevent overflow in size calculation
-        } 
+    // Additional check for ih.biSizeImage if it's provided and seems too small (though CreateMatrixFromBitmap might handle variations)
+    // If ih.biSizeImage is present and smaller than calculated, it could be an issue.
+    // However, the primary check is against bmp_data.size().
+    if (ih.biSizeImage != 0 && ih.biSizeImage < expected_pixel_data_size) {
+        // This might indicate a truncated BMP, even if bmp_data has enough bytes for expected_pixel_data_size
+        // For now, we prioritize expected_pixel_data_size for buffer allocation.
+        // CreateMatrixFromBitmap will be the final arbiter of data integrity.
+    }
+
+
+    // 7. Resize temp_bmp_file.bitmapData and copy the pixel data
     temp_bmp_file.bitmapData.resize(expected_pixel_data_size);
-    std::memcpy(temp_bmp_file.bitmapData.data(), bmp_data.data() + fh.bfOffBits, expected_pixel_data_size);
-    temp_bmp_file.SetValid(); 
-
-    // 3. Convert to Matrix<::Pixel>
-    Matrix::Matrix<::Pixel> image_matrix = ::CreateMatrixFromBitmap(temp_bmp_file); 
-
-    if (image_matrix.cols() == 0 || image_matrix.rows() == 0) { // Changed Width/Height to cols/rows
-        return BitmapError::InvalidImageData; 
+    if (expected_pixel_data_size > 0) { // Only copy if there's data to copy
+      std::memcpy(temp_bmp_file.bitmapData.data(), bmp_data.data() + fh.bfOffBits, expected_pixel_data_size);
     }
 
-    // 4. Convert Matrix<::Pixel> (assumed RGBA by ::Pixel members) to BmpTool::Bitmap (RGBA)
+
+    // 8. Call temp_bmp_file.SetValid()
+    temp_bmp_file.SetValid(); // Assuming this marks the file as ready for CreateMatrixFromBitmap
+
+    // 9. Call CreateMatrixFromBitmap
+    Matrix::Matrix<::Pixel> image_matrix = ::CreateMatrixFromBitmap(temp_bmp_file);
+
+    // 10. If image_matrix.cols() == 0 || image_matrix.rows() == 0, return error
+    if (image_matrix.cols() == 0 || image_matrix.rows() == 0) {
+        return BitmapError::InvalidImageData; // CreateMatrixFromBitmap failed to produce a valid matrix
+    }
+
+    // 11. Convert image_matrix to BmpTool::Bitmap bmp_out
     Bitmap bmp_out;
-    bmp_out.w = image_matrix.cols(); // Changed Width to cols
-    bmp_out.h = image_matrix.rows(); // Changed Height to rows
-    bmp_out.bpp = 32; 
+    bmp_out.w = image_matrix.cols();
+    bmp_out.h = image_matrix.rows();
+    bmp_out.bpp = 32; // Output is always 32bpp RGBA
+
+    // Safeguard against overflow for bmp_out.data.resize
+    if (bmp_out.h > 0 && bmp_out.w > (std::numeric_limits<size_t>::max() / bmp_out.h / 4)) { // 4 bytes per pixel
+         return BitmapError::InvalidImageData; // Output image dimensions too large
+    }
     bmp_out.data.resize(static_cast<size_t>(bmp_out.w) * bmp_out.h * 4);
 
-    // The loop converting image_matrix to bmp_out.data
-    // bmp_out.data is already resized.
     for (uint32_t y = 0; y < bmp_out.h; ++y) {
-        const ::Pixel* src_bgra_pixels_row = &image_matrix[y][0];
+        const ::Pixel* src_bgra_pixels_row = &image_matrix[y][0]; // ::Pixel is BGRA
         uint8_t* dest_rgba_data_row = bmp_out.data.data() + (static_cast<size_t>(y) * bmp_out.w * 4);
+        // Swizzle BGRA from ::Pixel to RGBA for BmpTool::Bitmap
         internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, bmp_out.w);
     }
+
+    // 12. Return bmp_out
     return bmp_out;
 }
-
 
 // Helper function to convert an array of ::Pixel (BGRA order) to an array of uint8_t (RGBA order)
 void internal_swizzle_bgra_to_rgba_simd(const ::Pixel* src_bgra_pixels, uint8_t* dest_rgba_data, size_t num_pixels) {
@@ -237,73 +226,78 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
 
     // 2. Convert BmpTool::Bitmap (RGBA) to Matrix<::Pixel> (RGBA)
     // Assuming ::Pixel struct has members .red, .green, .blue, .alpha
-    Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // Changed order to (rows, cols)
+    // Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // This was the first declaration
+    // The actual first useful declaration is just below, after input validation.
 
-    // The loop converting bitmap_in.data to image_matrix
-    // image_matrix is already sized.
+    // 1. Perform input validation on bitmap_in
+    if (bitmap_in.w == 0 || bitmap_in.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap_in.bpp != 32) {
+        return BitmapError::UnsupportedBpp; // Expects 32bpp RGBA input
+    }
+    const size_t expected_input_data_size = static_cast<size_t>(bitmap_in.w) * bitmap_in.h * 4; // 4 bytes for RGBA
+    if (bitmap_in.data.size() < expected_input_data_size) {
+        return BitmapError::InvalidImageData; // Not enough pixel data provided
+    }
+
+    // 2. Convert BmpTool::Bitmap (RGBA) to Matrix::Matrix<::Pixel> (BGRA)
+    // This is the correct place for the image_matrix declaration and initialization
+    Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // Matrix constructor is (rows, cols)
     for (uint32_t y = 0; y < bitmap_in.h; ++y) {
         const uint8_t* src_rgba_data_row = &bitmap_in.data[(static_cast<size_t>(y) * bitmap_in.w * 4)];
         ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
         internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bitmap_in.w);
     }
 
-    // 3. Convert Matrix<::Pixel> to ::Bitmap::File
-    // ::CreateBitmapFromMatrix is expected to produce a ::Bitmap::File with BMP-formatted data (e.g., BGRA, bottom-up)
+    // 3. Call ::CreateBitmapFromMatrix
     ::Bitmap::File temp_bmp_file = ::CreateBitmapFromMatrix(image_matrix);
 
-    if (!temp_bmp_file.IsValid()) { 
+    // 4. If !temp_bmp_file.IsValid(), return BitmapError::UnknownError
+    if (!temp_bmp_file.IsValid()) {
         return BitmapError::UnknownError; // Error during CreateBitmapFromMatrix
     }
 
-    // 4. Serialize ::Bitmap::File to Output Span
+    // 5. Calculate total_required_size
     // Ensure bfSize in the header is correct. CreateBitmapFromMatrix should set this.
-    // If not, it must be calculated:
-    uint32_t calculated_total_size = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + temp_bmp_file.bitmapData.size();
-    
-    // If CreateBitmapFromMatrix doesn't set bfSize correctly, or sets it to 0.
-    if (temp_bmp_file.bitmapFileHeader.bfSize != calculated_total_size) {
-       // Optionally, log a warning or adjust if there's a policy.
-       // For safety, ensure bfSize is what we expect for the data being copied.
-       // temp_bmp_file.bitmapFileHeader.bfSize = calculated_total_size; // Uncomment if necessary
-    }
-    // It's safer to use the calculated_total_size for buffer check if bfSize from lib is unreliable.
-    // However, the data to copy comes from temp_bmp_file, so its internal consistency is key.
-
+    // Also, bfOffBits should be correctly set by CreateBitmapFromMatrix.
+    // We rely on temp_bmp_file.bitmapData.size() for the pixel data size.
     uint32_t total_required_size = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + temp_bmp_file.bitmapData.size();
 
+    // As an integrity check, bfSize from the library should match calculated total size
+    if (temp_bmp_file.bitmapFileHeader.bfSize != total_required_size) {
+       // This might indicate an internal issue with CreateBitmapFromMatrix or a misunderstanding of its output.
+       // For robustness, one might choose to trust total_required_size or return an error.
+       // Given the instructions, we proceed with total_required_size for buffer check.
+       // Optionally: temp_bmp_file.bitmapFileHeader.bfSize = total_required_size;
+       // And: temp_bmp_file.bitmapFileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    }
 
+
+    // 6. If out_bmp_buffer.size() < total_required_size, return BitmapError::OutputBufferTooSmall
     if (out_bmp_buffer.size() < total_required_size) {
         return BitmapError::OutputBufferTooSmall;
     }
 
-    // If CreateBitmapFromMatrix does not correctly set bfSize, this could be problematic.
-    // For now, we trust CreateBitmapFromMatrix sets its headers correctly.
-    // If bfSize is not total_required_size, the output file might be technically incorrect
-    // but still contain the right amount of data if total_required_size is used for memcpy.
-    // The most robust approach is to ensure temp_bmp_file.bitmapFileHeader.bfSize IS total_required_size.
-    // If we have to fix it:
-    // temp_bmp_file.bitmapFileHeader.bfSize = total_required_size; 
-    // temp_bmp_file.bitmapFileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER); // Also ensure this
-
+    // 7. Copy temp_bmp_file.bitmapFileHeader, temp_bmp_file.bitmapInfoHeader, and temp_bmp_file.bitmapData
     uint8_t* buffer_ptr = out_bmp_buffer.data();
     std::memcpy(buffer_ptr, &temp_bmp_file.bitmapFileHeader, sizeof(BITMAPFILEHEADER));
     buffer_ptr += sizeof(BITMAPFILEHEADER);
     std::memcpy(buffer_ptr, &temp_bmp_file.bitmapInfoHeader, sizeof(BITMAPINFOHEADER));
     buffer_ptr += sizeof(BITMAPINFOHEADER);
 
-    // Ensure that bitmapData is not empty before attempting to access its data() pointer
     if (!temp_bmp_file.bitmapData.empty()) {
         std::memcpy(buffer_ptr, temp_bmp_file.bitmapData.data(), temp_bmp_file.bitmapData.size());
     } else if (total_required_size > (sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER))) {
-        // If bitmapData is empty but headers indicated pixel data, this is an inconsistency.
-        return BitmapError::InvalidImageData; // Or UnknownError from CreateBitmapFromMatrix
+        // This case (empty data but headers imply data) should ideally be caught by temp_bmp_file.IsValid()
+        // or result in temp_bmp_file.bitmapData.size() being consistent.
+        // If CreateBitmapFromMatrix produced such a state and marked it valid, it's an issue.
+        return BitmapError::InvalidImageData; // Or UnknownError from CreateBitmapFromMatrix inconsistency
     }
 
-
-    // 5. Return
-    return BmpTool::Success{}; // This will implicitly convert to Result<void, BitmapError>(Success{})
+    // 8. Return BmpTool::Success{}
+    return BmpTool::Success{};
 }
-
 
 // Helper function to convert an array of uint8_t (RGBA order) to an array of ::Pixel (BGRA order)
 void internal_swizzle_rgba_to_bgra_simd(const uint8_t* src_rgba_data, ::Pixel* dest_bgra_pixels, size_t num_pixels) {
@@ -358,6 +352,970 @@ void internal_swizzle_rgba_to_bgra_simd(const uint8_t* src_rgba_data, ::Pixel* d
         dest_pixel.blue  = src_pixel_ptr[2]; // B
         dest_pixel.alpha = src_pixel_ptr[3]; // A
     }
+}
+
+// Implementation of image manipulation functions
+
+Result<Bitmap, BitmapError> shrink(const Bitmap& bmp_tool_bitmap, int scaleFactor) {
+    // 1. Validate input BmpTool::Bitmap and other parameters
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+    if (scaleFactor <= 0) {
+        return BitmapError::InvalidImageData; // scaleFactor must be positive
+    }
+
+    // 2. Convert BmpTool::Bitmap (RGBA) to ::Bitmap::File (via Matrix::Matrix<::Pixel> BGRA)
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) {
+        return BitmapError::UnknownError;
+    }
+
+    // 3. Call the core function from src/bitmap/bitmap.cpp
+    ::Bitmap::File result_core_bitmap_file = ::ShrinkImage(core_bitmap_file, scaleFactor);
+
+    if (!result_core_bitmap_file.IsValid()) {
+        // ShrinkImage might return an invalid/empty bitmap if scaleFactor is too large,
+        // leading to zero width/height. This is handled by the conversion step below.
+        // If it's invalid for other reasons, it's an UnknownError.
+        if (result_core_bitmap_file.bitmapInfoHeader.biWidth == 0 || result_core_bitmap_file.bitmapInfoHeader.biHeight == 0){
+            // This is a valid outcome for shrink, will result in an empty BmpTool::Bitmap
+        } else {
+            return BitmapError::UnknownError; // Core operation failed for other reasons
+        }
+    }
+
+    // 4. Convert resulting ::Bitmap::File back to BmpTool::Bitmap (RGBA)
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+            return BitmapError::InvalidImageData; // Output image dimensions too large
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    // If w or h is 0, data remains empty, which is correct.
+
+    // 5. Return
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> rotateCounterClockwise(const Bitmap& bmp_tool_bitmap) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::RotateImageCounterClockwise(core_bitmap_file);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> rotateClockwise(const Bitmap& bmp_tool_bitmap) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::RotateImageClockwise(core_bitmap_file);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> mirror(const Bitmap& bmp_tool_bitmap) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::MirrorImage(core_bitmap_file);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> flip(const Bitmap& bmp_tool_bitmap) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::FlipImage(core_bitmap_file);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> greyscale(const Bitmap& bmp_tool_bitmap) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::GreyscaleImage(core_bitmap_file);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeBrightness(const Bitmap& bmp_tool_bitmap, float brightness) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageBrightness(core_bitmap_file, brightness);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeContrast(const Bitmap& bmp_tool_bitmap, float contrast) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageContrast(core_bitmap_file, contrast);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeSaturation(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageSaturation(core_bitmap_file, saturation);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeSaturationBlue(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageSaturationBlue(core_bitmap_file, saturation);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeSaturationGreen(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageSaturationGreen(core_bitmap_file, saturation);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeSaturationRed(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageSaturationRed(core_bitmap_file, saturation);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeSaturationMagenta(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageSaturationMagenta(core_bitmap_file, saturation);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeSaturationYellow(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageSaturationYellow(core_bitmap_file, saturation);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeSaturationCyan(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageSaturationCyan(core_bitmap_file, saturation);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeLuminanceBlue(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageLuminanceBlue(core_bitmap_file, luminance);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeLuminanceGreen(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageLuminanceGreen(core_bitmap_file, luminance);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeLuminanceRed(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageLuminanceRed(core_bitmap_file, luminance);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeLuminanceMagenta(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageLuminanceMagenta(core_bitmap_file, luminance);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeLuminanceYellow(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageLuminanceYellow(core_bitmap_file, luminance);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> changeLuminanceCyan(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ChangeImageLuminanceCyan(core_bitmap_file, luminance);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> invertColors(const Bitmap& bmp_tool_bitmap) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::InvertImageColors(core_bitmap_file);
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> applySepiaTone(const Bitmap& bmp_tool_bitmap) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ApplySepiaTone(core_bitmap_file); // Corrected function name
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
+}
+
+Result<Bitmap, BitmapError> applyBoxBlur(const Bitmap& bmp_tool_bitmap, int blurRadius) {
+    if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
+        bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
+        return BitmapError::InvalidImageData;
+    }
+    if (blurRadius < 0) {
+        return BitmapError::InvalidImageData; // blurRadius must be non-negative
+    }
+
+    Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
+    for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {
+        const uint8_t* src_rgba_data_row = &bmp_tool_bitmap.data[(static_cast<size_t>(y) * bmp_tool_bitmap.w * 4)];
+        ::Pixel* dest_bgra_pixels_row = &image_matrix[y][0];
+        internal_swizzle_rgba_to_bgra_simd(src_rgba_data_row, dest_bgra_pixels_row, bmp_tool_bitmap.w);
+    }
+
+    ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
+    if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    ::Bitmap::File result_core_bitmap_file = ::ApplyBoxBlur(core_bitmap_file, blurRadius); // Corrected function name
+    if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
+
+    Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
+    Bitmap final_bmp_tool_bitmap;
+    final_bmp_tool_bitmap.w = result_image_matrix.cols();
+    final_bmp_tool_bitmap.h = result_image_matrix.rows();
+    final_bmp_tool_bitmap.bpp = 32;
+
+    if (final_bmp_tool_bitmap.w > 0 && final_bmp_tool_bitmap.h > 0) {
+        if (final_bmp_tool_bitmap.h > 0 && final_bmp_tool_bitmap.w > (std::numeric_limits<size_t>::max() / final_bmp_tool_bitmap.h / 4)) {
+             return BitmapError::InvalidImageData;
+        }
+        final_bmp_tool_bitmap.data.resize(static_cast<size_t>(final_bmp_tool_bitmap.w) * final_bmp_tool_bitmap.h * 4);
+        for (uint32_t y = 0; y < final_bmp_tool_bitmap.h; ++y) {
+            const ::Pixel* src_bgra_pixels_row = &result_image_matrix[y][0];
+            uint8_t* dest_rgba_data_row = &final_bmp_tool_bitmap.data[(static_cast<size_t>(y) * final_bmp_tool_bitmap.w * 4)];
+            internal_swizzle_bgra_to_rgba_simd(src_bgra_pixels_row, dest_rgba_data_row, final_bmp_tool_bitmap.w);
+        }
+    }
+    return final_bmp_tool_bitmap;
 }
 
 } // namespace BmpTool
