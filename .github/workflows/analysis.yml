@@ -25,7 +25,7 @@ jobs:
       run: doxygen Doxyfile
 
     - name: Upload Doxygen Documentation
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: doxygen-html-docs
         path: docs/doxygen/html
