@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - The `bitmap` library now exposes the `BmpTool` API via `include/bitmap.hpp` for simplified bitmap operations.
+- **Documentation**:
+    - Reviewed and significantly updated `README.md` for accuracy regarding features, API examples (old vs. new), build instructions, and added "Code Documentation" and "Contributing" sections.
+    - Reviewed and extensively updated `src/matrix/Documentation/Matrix.MD` to align with the current `src/matrix/matrix.h` implementation, including documenting move semantics, new functions, and correcting outdated information.
 
 ## [0.2.0] - 2024-07-27
 
