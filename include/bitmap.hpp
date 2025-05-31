@@ -183,6 +183,16 @@ struct Bitmap {
 Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data);
 
 /**
+ * @brief Loads a bitmap from a file path.
+ *
+ * Opens and reads the BMP file from the given path, then constructs a Bitmap object.
+ *
+ * @param filepath The path to the BMP file.
+ * @return A Result object containing either a Bitmap on success or a BitmapError on failure.
+ */
+Result<Bitmap, BitmapError> load(const std::string& filepath);
+
+/**
  * @brief Saves a Bitmap object to a memory span as BMP file data.
  *
  * Converts the Bitmap object into the BMP file format and writes it to the provided output buffer.
@@ -193,6 +203,17 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data);
  * @return A Result object containing Success on success or a BitmapError on failure.
  */
 Result<void, BitmapError> save(const Bitmap& bitmap, std::span<uint8_t> out_bmp_buffer);
+
+/**
+ * @brief Saves a Bitmap object to a file path.
+ *
+ * Converts the Bitmap object into the BMP file format and writes it to the specified file.
+ *
+ * @param bitmap The Bitmap object to save.
+ * @param filepath The path to the file where the BMP data will be saved.
+ * @return A Result object containing Success on success or a BitmapError on failure.
+ */
+Result<void, BitmapError> save(const Bitmap& bitmap, const std::string& filepath);
 
 /**
  * @brief Shrinks the image by a given scale factor.
