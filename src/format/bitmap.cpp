@@ -7,6 +7,7 @@
 
 // Own project includes
 #include "../../include/bitmap.hpp" // For BmpTool::Bitmap, Result, BitmapError
+#include "format_internal_helpers.hpp" // Re-added include
 
 // External library includes (as per task)
 #include "../../src/bitmapfile/bitmap_file.h" // For BITMAPFILEHEADER, BITMAPINFOHEADER from external lib
@@ -21,9 +22,7 @@ constexpr uint32_t BI_RGB_CONST = 0; // No compression
 
 namespace BmpTool {
 
-// Forward declarations for internal helper functions, previously in format_internal_helpers.hpp
-void internal_swizzle_bgra_to_rgba_simd(const ::Pixel* src_bgra_pixels, uint8_t* dest_rgba_data, size_t num_pixels);
-void internal_swizzle_rgba_to_bgra_simd(const uint8_t* src_rgba_data, ::Pixel* dest_bgra_pixels, size_t num_pixels);
+// Forward declarations removed, now using format_internal_helpers.hpp
 
 // The BmpTool::Format::Internal namespace and its functions are removed as they are no longer used.
 
@@ -227,7 +226,8 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
 
     // 2. Convert BmpTool::Bitmap (RGBA) to Matrix<::Pixel> (RGBA)
     // Assuming ::Pixel struct has members .red, .green, .blue, .alpha
-    Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // Changed order to (rows, cols)
+    // Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // This was the first declaration
+    // The actual first useful declaration is just below, after input validation.
 
     // 1. Perform input validation on bitmap_in
     if (bitmap_in.w == 0 || bitmap_in.h == 0) {
@@ -242,6 +242,7 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
     }
 
     // 2. Convert BmpTool::Bitmap (RGBA) to Matrix::Matrix<::Pixel> (BGRA)
+    // This is the correct place for the image_matrix declaration and initialization
     Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // Matrix constructor is (rows, cols)
     for (uint32_t y = 0; y < bitmap_in.h; ++y) {
         const uint8_t* src_rgba_data_row = &bitmap_in.data[(static_cast<size_t>(y) * bitmap_in.w * 4)];
@@ -1252,7 +1253,7 @@ Result<Bitmap, BitmapError> applySepiaTone(const Bitmap& bmp_tool_bitmap) {
     ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
     if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
 
-    ::Bitmap::File result_core_bitmap_file = ::ApplySepiaToneToImage(core_bitmap_file);
+    ::Bitmap::File result_core_bitmap_file = ::ApplySepiaTone(core_bitmap_file); // Corrected function name
     if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
 
     Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
@@ -1294,7 +1295,7 @@ Result<Bitmap, BitmapError> applyBoxBlur(const Bitmap& bmp_tool_bitmap, int blur
     ::Bitmap::File core_bitmap_file = ::CreateBitmapFromMatrix(image_matrix);
     if (!core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
 
-    ::Bitmap::File result_core_bitmap_file = ::ApplyBoxBlurToImage(core_bitmap_file, blurRadius);
+    ::Bitmap::File result_core_bitmap_file = ::ApplyBoxBlur(core_bitmap_file, blurRadius); // Corrected function name
     if (!result_core_bitmap_file.IsValid()) { return BitmapError::UnknownError; }
 
     Matrix::Matrix<::Pixel> result_image_matrix = ::CreateMatrixFromBitmap(result_core_bitmap_file);
