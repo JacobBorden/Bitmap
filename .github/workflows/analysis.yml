@@ -1,0 +1,75 @@
+name: Analysis Pipeline
+
+on:
+  push:
+    branches: [ "master", "development" ]
+  pull_request:
+    branches: [ "master", "development" ]
+
+env:
+  BUILD_TYPE: Debug # Note: This default BUILD_TYPE will be overridden in specific jobs as needed
+
+jobs:
+  asan-msan:
+    name: ASan/MSan
+    runs-on: ubuntu-latest
+    env: # Overriding BUILD_TYPE for this specific job
+      BUILD_TYPE: Debug
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DENABLE_ASAN=ON -DENABLE_MSAN=ON
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run: ctest -C ${{env.BUILD_TYPE}}
+
+  valgrind:
+    name: Valgrind
+    needs: asan-msan
+    runs-on: ubuntu-latest
+    env: # Overriding BUILD_TYPE for this specific job
+      BUILD_TYPE: Release
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Valgrind
+      run: sudo apt-get update && sudo apt-get install -y valgrind
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Test with Valgrind
+      working-directory: ${{github.workspace}}/build
+      run: ctest -T memcheck -C ${{env.BUILD_TYPE}}
+
+  codeql-analysis:
+    name: CodeQL Analysis
+    needs: asan-msan # Depends on the initial build and test phase
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # Required to upload CodeQL analysis results
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: cpp # Specify 'cpp' for C++
+        # config-file: ./.github/codeql/codeql-config.yml # Optional: if you have a custom config
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+      # If autobuild fails, you might need to specify custom build steps here.
+      # For CMake projects, it usually works well.
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
