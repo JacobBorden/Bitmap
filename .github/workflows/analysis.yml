@@ -18,6 +18,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Install Doxygen
+      run: sudo apt-get update && sudo apt-get install -y doxygen
+
+    - name: Generate Doxygen Documentation
+      run: doxygen Doxyfile
+
+    - name: Upload Doxygen Documentation
+      uses: actions/upload-artifact@v3
+      with:
+        name: doxygen-html-docs
+        path: docs/doxygen/html
+
     - name: Configure CMake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DENABLE_ASAN=ON -DENABLE_MSAN=ON
 
