@@ -4,6 +4,8 @@
 #include <algorithm> // For std::min, std::max (potentially)
 #include <stdexcept> // For robust error checking if needed beyond enums
 #include <limits>    // Required for std::numeric_limits
+#include <fstream>   // For std::ifstream
+#include <string>    // For std::string
 
 // Own project includes
 #include "../../include/bitmap.hpp" // For BmpTool::Bitmap, Result, BitmapError
@@ -25,6 +27,31 @@ namespace BmpTool {
 // Forward declarations removed, now using format_internal_helpers.hpp
 
 // The BmpTool::Format::Internal namespace and its functions are removed as they are no longer used.
+
+Result<Bitmap, BitmapError> load(const std::string& filepath) {
+    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        return BitmapError::IoError;
+    }
+
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    if (size == 0) { // Handle empty file case
+        file.close();
+        return BitmapError::InvalidImageData; // Or NotABmp / InvalidFileHeader
+    }
+
+    std::vector<uint8_t> buffer(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+        file.close();
+        return BitmapError::IoError;
+    }
+
+    file.close();
+
+    return load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+}
 
 Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     // 1. Read BITMAPFILEHEADER and BITMAPINFOHEADER
@@ -353,6 +380,90 @@ void internal_swizzle_rgba_to_bgra_simd(const uint8_t* src_rgba_data, ::Pixel* d
         dest_pixel.alpha = src_pixel_ptr[3]; // A
     }
 }
+
+Result<void, BitmapError> save(const Bitmap& bitmap_in, const std::string& filepath) {
+    // 1. Input Validation
+    if (bitmap_in.w == 0 || bitmap_in.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap_in.bpp != 32) {
+        return BitmapError::UnsupportedBpp;
+    }
+    // Calculate expected data size for RGBA
+    // Prevent overflow when calculating expected_input_data_size
+    if (bitmap_in.h > 0 && bitmap_in.w > (std::numeric_limits<uint32_t>::max() / bitmap_in.h / 4) ) {
+         return BitmapError::InvalidImageData; // Output image dimensions too large for uint32_t calculation
+    }
+    const size_t expected_input_data_size = static_cast<size_t>(bitmap_in.w) * bitmap_in.h * 4;
+    if (bitmap_in.data.empty() || bitmap_in.data.size() < expected_input_data_size) {
+        return BitmapError::InvalidImageData;
+    }
+
+    // 2. Estimate buffer size
+    // A common size for BITMAPFILEHEADER is 14 bytes, BITMAPINFOHEADER is 40 bytes. Total 54.
+    // Max pixel data size. Add some padding just in case, though CreateBitmapFromMatrix output should be tight.
+    // uint32_t max_pixel_data_size = bitmap_in.w * bitmap_in.h * 4; // Assuming 4 bytes per pixel
+    // uint32_t estimated_buffer_size = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + max_pixel_data_size + (bitmap_in.h * 4); // Extra padding per row
+
+    // Let's use a more direct estimation based on how the span save works, it relies on CreateBitmapFromMatrix
+    // which sets the correct BITMAPFILEHEADER.bfSize.
+    // The underlying save(span) will return OutputBufferTooSmall if this is too small.
+    // A generous estimate: header sizes + data size + a bit for row padding (though 32bpp usually has no row padding if w is multiple of 4 pixels).
+    // The previous save function uses `sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + temp_bmp_file.bitmapData.size()`.
+    // `temp_bmp_file.bitmapData.size()` is the critical part. This is `padded_row_size * height`.
+    // For 32bpp (4 bytes/pixel), `unpadded_row_size = w * 4`. `padded_row_size = (unpadded_row_size + 3) & ~3`.
+    // So, `padded_row_size` is `w * 4` if `w*4` is a multiple of 4 (always true). So no padding for 32bpp.
+    // Thus, pixel data size is `w * h * 4`.
+    size_t estimated_buffer_size = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + expected_input_data_size;
+
+
+    std::vector<uint8_t> temp_buffer(estimated_buffer_size);
+
+    // 3. Call span-based save
+    Result<void, BitmapError> save_result = save(bitmap_in, std::span<uint8_t>(temp_buffer.data(), temp_buffer.size()));
+
+    if (save_result.isError()) {
+        // If it's OutputBufferTooSmall, our initial estimate was wrong, which is unlikely for 32bpp
+        // as it usually doesn't require padding that would exceed w*h*4.
+        // However, it's good to propagate the error.
+        return save_result.error();
+    }
+
+    // 4. Get actual BMP size from header
+    BITMAPFILEHEADER fh;
+    std::memcpy(&fh, temp_buffer.data(), sizeof(BITMAPFILEHEADER));
+    size_t actual_bmp_size = fh.bfSize;
+
+    // 5. Validate actual_bmp_size
+    if (actual_bmp_size == 0 || actual_bmp_size > temp_buffer.size() || actual_bmp_size < (sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER))) {
+        // If bfSize is 0, or larger than our buffer (should be caught by span save's OutputBufferTooSmall),
+        // or smaller than minimum header size, something is wrong.
+        return BitmapError::UnknownError;
+    }
+
+    // 6. Open output file
+    std::ofstream file(filepath, std::ios::binary | std::ios::trunc); // Truncate if file exists
+    if (!file.is_open()) {
+        return BitmapError::IoError;
+    }
+
+    // 7. Write actual data to file
+    file.write(reinterpret_cast<const char*>(temp_buffer.data()), actual_bmp_size);
+
+    if (!file.good()) { // Check for write errors
+        file.close();
+        // Attempt to remove partially written file
+        // std::remove(filepath.c_str()); // Optional: consider error handling for remove
+        return BitmapError::IoError;
+    }
+
+    // 8. Close file
+    file.close();
+
+    // 9. Return success
+    return Success{};
+}
+
 
 // Implementation of image manipulation functions
 
