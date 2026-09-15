@@ -72,13 +72,17 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     if (fh.bfType != BMP_MAGIC_TYPE_CONST) {
         return BitmapError::NotABmp;
     }
+    if (ih.biSize < sizeof(BITMAPINFOHEADER)) {
+        return BitmapError::InvalidImageHeader;
+    }
     if (ih.biCompression != BI_RGB_CONST) {
-        // CreateMatrixFromBitmap doesn't explicitly check this, but assumes uncompressed.
-        return BitmapError::UnsupportedBpp;
+        return BitmapError::UnsupportedCompression;
     }
     if (ih.biBitCount != 24 && ih.biBitCount != 32) {
-        // CreateMatrixFromBitmap checks this.
         return BitmapError::UnsupportedBpp;
+    }
+    if (ih.biPlanes != 1) {
+        return BitmapError::InvalidImageHeader;
     }
     if (ih.biWidth <= 0 || static_cast<uint32_t>(ih.biWidth) > SafeMath::MAX_SAFE_DIMENSION) {
         return BitmapError::InvalidImageHeader;
@@ -87,7 +91,11 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     if (!SafeMath::getSafeAbsoluteHeight(ih.biHeight, abs_height)) {
         return BitmapError::InvalidImageHeader;
     }
-    if (fh.bfOffBits < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) || fh.bfOffBits >= bmp_data.size()) {
+    size_t header_min_size = 0;
+    if (!SafeMath::add(sizeof(BITMAPFILEHEADER), static_cast<size_t>(ih.biSize), header_min_size)) {
+        return BitmapError::InvalidFileHeader;
+    }
+    if (fh.bfOffBits < header_min_size || fh.bfOffBits >= bmp_data.size()) {
         return BitmapError::InvalidFileHeader;
     }
 
@@ -104,13 +112,28 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
         return BitmapError::InvalidImageData;
     }
 
+    // Strict physical payload validation:
+    // If ih.biSizeImage is non-zero, it must not declare fewer bytes than required by the dimensions
+    if (ih.biSizeImage != 0 && ih.biSizeImage < expected_pixel_data_size) {
+        return BitmapError::InvalidImageHeader;
+    }
+
     // 6. Check if fh.bfOffBits + expected_pixel_data_size <= bmp_data.size() without overflow
     size_t total_required_offset = 0;
     if (!SafeMath::add(static_cast<size_t>(fh.bfOffBits), static_cast<size_t>(expected_pixel_data_size), total_required_offset)) {
         return BitmapError::InvalidImageData;
     }
     if (total_required_offset > bmp_data.size()) {
-        return BitmapError::InvalidImageData;
+        return BitmapError::PayloadTruncated;
+    }
+
+    // If biSizeImage is declared larger, ensure the buffer contains the full declared payload
+    if (ih.biSizeImage > expected_pixel_data_size) {
+        size_t total_claimed_offset = 0;
+        if (!SafeMath::add(static_cast<size_t>(fh.bfOffBits), static_cast<size_t>(ih.biSizeImage), total_claimed_offset) ||
+            total_claimed_offset > bmp_data.size()) {
+            return BitmapError::PayloadTruncated;
+        }
     }
 
     // 7. Resize temp_bmp_file.bitmapData and copy the pixel data

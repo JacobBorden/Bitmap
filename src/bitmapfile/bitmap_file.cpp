@@ -131,6 +131,16 @@ bool Bitmap::File::Open(std::string filename)
         file.close(); return false;
     }
 
+    if (bitmapInfoHeader.biSize < sizeof(BITMAPINFOHEADER)) {
+        file.close(); return false;
+    }
+    if (bitmapInfoHeader.biCompression != 0) { // Strictly uncompressed BI_RGB only
+        file.close(); return false;
+    }
+    if (bitmapInfoHeader.biPlanes != 1) {
+        file.close(); return false;
+    }
+
     uint32_t abs_height = 0;
     if (!BmpTool::SafeMath::getSafeAbsoluteHeight(bitmapInfoHeader.biHeight, abs_height)) {
         file.close(); return false;

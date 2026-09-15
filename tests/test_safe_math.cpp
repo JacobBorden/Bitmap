@@ -190,3 +190,169 @@ TEST(SecurityTest, MaliciousBmpOffsetOverflow) {
     EXPECT_TRUE(result.isError());
     EXPECT_EQ(result.error(), BitmapError::InvalidFileHeader);
 }
+
+TEST(SecurityTest, TruncatedPayloadDetected) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 40000;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = sizeof(BITMAPINFOHEADER);
+    bih.biWidth = 100;
+    bih.biHeight = 100;
+    bih.biPlanes = 1;
+    bih.biBitCount = 32;
+    bih.biCompression = 0;
+
+    // Buffer has headers plus only 64 bytes instead of 40,000 bytes
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 64, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+
+    auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result.isError());
+    EXPECT_EQ(result.error(), BitmapError::PayloadTruncated);
+}
+
+TEST(SecurityTest, TruncatedClaimedBiSizeImage) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 2000;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = sizeof(BITMAPINFOHEADER);
+    bih.biWidth = 10;
+    bih.biHeight = 10;
+    bih.biPlanes = 1;
+    bih.biBitCount = 32; // expected 400 bytes
+    bih.biCompression = 0;
+    bih.biSizeImage = 2000; // claims 2000 bytes
+
+    // Buffer only provides 450 bytes (covers 400 bytes expected, but truncated relative to claimed 2000)
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 450, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+
+    auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result.isError());
+    EXPECT_EQ(result.error(), BitmapError::PayloadTruncated);
+}
+
+TEST(SecurityTest, UnsupportedCompressionCode) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 400;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = sizeof(BITMAPINFOHEADER);
+    bih.biWidth = 10;
+    bih.biHeight = 10;
+    bih.biPlanes = 1;
+    bih.biBitCount = 32;
+    bih.biCompression = 1; // BI_RLE8 (unsupported compression code)
+
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 400, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+
+    auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result.isError());
+    EXPECT_EQ(result.error(), BitmapError::UnsupportedCompression);
+}
+
+TEST(SecurityTest, InvalidHeaderBiSizeTooSmall) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 400;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = 20; // Invalid: must be at least sizeof(BITMAPINFOHEADER) (40)
+    bih.biWidth = 10;
+    bih.biHeight = 10;
+    bih.biPlanes = 1;
+    bih.biBitCount = 32;
+    bih.biCompression = 0;
+
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 400, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+
+    auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result.isError());
+    EXPECT_EQ(result.error(), BitmapError::InvalidImageHeader);
+}
+
+TEST(SecurityTest, InvalidHeaderPlanesNotOne) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 400;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = sizeof(BITMAPINFOHEADER);
+    bih.biWidth = 10;
+    bih.biHeight = 10;
+    bih.biPlanes = 2; // Invalid: must be 1
+    bih.biBitCount = 32;
+    bih.biCompression = 0;
+
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 400, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+
+    auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result.isError());
+    EXPECT_EQ(result.error(), BitmapError::InvalidImageHeader);
+}
+
+TEST(SecurityTest, InconsistentBiSizeImageTooSmall) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 400;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = sizeof(BITMAPINFOHEADER);
+    bih.biWidth = 10;
+    bih.biHeight = 10;
+    bih.biPlanes = 1;
+    bih.biBitCount = 32;
+    bih.biCompression = 0;
+    bih.biSizeImage = 50; // Declares 50 bytes, but dimensions require 400 bytes!
+
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 400, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+
+    auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result.isError());
+    EXPECT_EQ(result.error(), BitmapError::InvalidImageHeader);
+}
+
+TEST(SecurityTest, OffsetBitsSmallerThanHeaders) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = 30; // Smaller than sizeof(BITMAPFILEHEADER) + biSize (54)
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 400;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = sizeof(BITMAPINFOHEADER);
+    bih.biWidth = 10;
+    bih.biHeight = 10;
+    bih.biPlanes = 1;
+    bih.biBitCount = 32;
+    bih.biCompression = 0;
+
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 400, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+
+    auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result.isError());
+    EXPECT_EQ(result.error(), BitmapError::InvalidFileHeader);
+}
+

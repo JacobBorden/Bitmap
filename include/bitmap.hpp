@@ -21,7 +21,9 @@ enum class BitmapError {
     OutputBufferTooSmall, ///< The provided output buffer (e.g., for saving) is too small.
     IoError,              ///< A generic error occurred during an I/O operation (e.g., reading/writing data).
     NotABmp,              ///< The file is not a BMP file (e.g., magic identifier is incorrect).
-    UnknownError          ///< An unspecified error occurred.
+    UnknownError,         ///< An unspecified error occurred.
+    PayloadTruncated,     ///< The pixel data buffer is truncated or smaller than expected.
+    UnsupportedCompression ///< The compression format is not supported (only uncompressed BI_RGB is supported).
 };
 
 /**
