@@ -1,0 +1,6 @@
+[submodule "dependencies/bitmapfile"]
+	path = dependencies/bitmapfile
+	url = https://github.com/JacobBorden/BitmapFile.git
+[submodule "dependencies/matrix"]
+	path = dependencies/matrix
+	url = https://github.com/JacobBorden/Matrix.git
