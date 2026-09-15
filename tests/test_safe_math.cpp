@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <vector>
+#include <span>
 #include "../src/safe_math.hpp"
 #include "../../include/bitmap.hpp"
 #include "../src/bitmapfile/bitmap_file.h"
