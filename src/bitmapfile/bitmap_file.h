@@ -6,12 +6,15 @@
 #include <vector>
 #include <string>
 
+#if !defined(_WINDEF_) && !defined(_MINWINDEF_)
 // Define Windows-specific types using standard C++ types
 typedef uint8_t  BYTE;
 typedef uint32_t DWORD;
 typedef int32_t  LONG;
 typedef uint16_t WORD;
+#endif
 
+#if !defined(_WINGDI_)
 #pragma pack(push, 1) // Ensure structure is packed
 typedef struct tagBITMAPFILEHEADER {
     WORD    bfType;        // Specifies the file type, must be BM.
@@ -37,6 +40,7 @@ typedef struct tagBITMAPINFOHEADER {
     DWORD      biClrImportant; // Specifies the number of color indexes that are considered important for displaying the bitmap.
 } BITMAPINFOHEADER;
 #pragma pack(pop)
+#endif
 
 namespace Bitmap
 {

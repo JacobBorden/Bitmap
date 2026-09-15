@@ -1,6 +1,13 @@
 #ifndef _BITMAP_
 #define _BITMAP_
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include "../matrix/matrix.h"
 #include "../bitmapfile/bitmap_file.h"
 #include <cmath>     // For mathematical operations like sqrt, pow.

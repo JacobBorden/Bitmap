@@ -69,9 +69,9 @@ Bitmap::File ScreenShotWindow(HWND windowHandle)
         bitmapFile.bitmapFileHeader.bfReserved1 = 0;
         bitmapFile.bitmapFileHeader.bfReserved2 = 0;
 
-        // Retrieve the actual pixel data from the bitmap.
-        // DIB_RGB_COLORS indicates that the bmiColors member of BITMAPINFO is RGB.
-        int DIBitsGotSuccessfully = GetDIBits(deviceContextHandle, bitmapHandle, 0, deviceContextBitmap.bmHeight, &bitmapFile.bitmapData[0], &bitmapFile.bitmapInfo, DIB_RGB_COLORS);
+        BITMAPINFO bmi = {};
+        bmi.bmiHeader = bitmapFile.bitmapInfoHeader;
+        int DIBitsGotSuccessfully = GetDIBits(deviceContextHandle, bitmapHandle, 0, deviceContextBitmap.bmHeight, &bitmapFile.bitmapData[0], &bmi, DIB_RGB_COLORS);
         if (DIBitsGotSuccessfully)
             bitmapFile.SetValid(); // Mark the bitmap file as valid.
     }
