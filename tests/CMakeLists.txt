@@ -10,6 +10,7 @@ set(TEST_SOURCES
     test_bitmap_file.cpp
     test_matrix.cpp
     test_swizzle.cpp # <-- Add this line
+    test_safe_math.cpp
     tests_main.cpp
     api_roundtrip.cpp
 )

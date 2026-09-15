@@ -10,6 +10,7 @@
 // Own project includes
 #include "../../include/bitmap.hpp" // For BmpTool::Bitmap, Result, BitmapError
 #include "format_internal_helpers.hpp" // Re-added include
+#include "../safe_math.hpp"
 
 // External library includes (as per task)
 #include "../../src/bitmapfile/bitmap_file.h" // For BITMAPFILEHEADER, BITMAPINFOHEADER from external lib
@@ -79,19 +80,16 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
         // CreateMatrixFromBitmap checks this.
         return BitmapError::UnsupportedBpp;
     }
-    if (ih.biWidth <= 0 || ih.biHeight == 0) { // abs(ih.biHeight) > 0 is covered by ih.biHeight == 0
-        // CreateMatrixFromBitmap checks this via matrix dimensions.
+    if (ih.biWidth <= 0 || static_cast<uint32_t>(ih.biWidth) > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::InvalidImageHeader;
+    }
+    uint32_t abs_height = 0;
+    if (!SafeMath::getSafeAbsoluteHeight(ih.biHeight, abs_height)) {
         return BitmapError::InvalidImageHeader;
     }
     if (fh.bfOffBits < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) || fh.bfOffBits >= bmp_data.size()) {
         return BitmapError::InvalidFileHeader;
     }
-    // Check for bfOffBits + ih.biSizeImage <= bmp_data.size() if ih.biSizeImage is not zero.
-    // This check is more reliably done after calculating expected_pixel_data_size.
-    // if (ih.biSizeImage != 0 && (fh.bfOffBits + ih.biSizeImage > bmp_data.size())) {
-    //     return BitmapError::InvalidImageData;
-    // }
-
 
     // 3. Create a ::Bitmap::File object
     ::Bitmap::File temp_bmp_file;
@@ -100,43 +98,20 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     temp_bmp_file.bitmapFileHeader = fh;
     temp_bmp_file.bitmapInfoHeader = ih;
 
-    // 5. Calculate the expected pixel data size
-    uint32_t abs_height = (ih.biHeight < 0) ? -static_cast<uint32_t>(ih.biHeight) : static_cast<uint32_t>(ih.biHeight);
-    if (abs_height == 0) { // Should have been caught by ih.biHeight == 0, but defensive check.
-        return BitmapError::InvalidImageHeader;
-    }
-    uint32_t bytes_per_pixel_src = ih.biBitCount / 8;
-    uint32_t unpadded_row_size_src = ih.biWidth * bytes_per_pixel_src;
-
-    // Use Format::Internal::calculateRowPadding or replicate logic if we decide to remove the namespace entirely later
-    // For now, let's assume calculateRowPadding is available or we can inline its logic if needed.
-    // uint32_t padding_per_row = Format::Internal::calculateRowPadding(ih.biWidth, ih.biBitCount);
-    // uint32_t padded_row_size_src = unpadded_row_size_src + padding_per_row;
-    // More direct calculation for padded_row_size_src:
-    uint32_t padded_row_size_src = (unpadded_row_size_src + 3) & (~3);
-
-    // Prevent overflow for expected_pixel_data_size calculation
-    if (abs_height > 0 && padded_row_size_src > (std::numeric_limits<uint32_t>::max() / abs_height) ) {
-        return BitmapError::InvalidImageData; // Calculation would overflow
-    }
-    uint32_t expected_pixel_data_size = padded_row_size_src * abs_height;
-
-    // 6. Check if fh.bfOffBits + expected_pixel_data_size <= bmp_data.size()
-    if (fh.bfOffBits + expected_pixel_data_size > bmp_data.size()) {
-        // This also covers the case where ih.biSizeImage might be 0 or incorrect,
-        // relying on calculated size.
+    // 5. Safely calculate the expected pixel data size
+    uint32_t expected_pixel_data_size = 0;
+    if (!SafeMath::computePixelDataSize(static_cast<uint32_t>(ih.biWidth), abs_height, ih.biBitCount, expected_pixel_data_size)) {
         return BitmapError::InvalidImageData;
     }
 
-    // Additional check for ih.biSizeImage if it's provided and seems too small (though CreateMatrixFromBitmap might handle variations)
-    // If ih.biSizeImage is present and smaller than calculated, it could be an issue.
-    // However, the primary check is against bmp_data.size().
-    if (ih.biSizeImage != 0 && ih.biSizeImage < expected_pixel_data_size) {
-        // This might indicate a truncated BMP, even if bmp_data has enough bytes for expected_pixel_data_size
-        // For now, we prioritize expected_pixel_data_size for buffer allocation.
-        // CreateMatrixFromBitmap will be the final arbiter of data integrity.
+    // 6. Check if fh.bfOffBits + expected_pixel_data_size <= bmp_data.size() without overflow
+    size_t total_required_offset = 0;
+    if (!SafeMath::add(static_cast<size_t>(fh.bfOffBits), static_cast<size_t>(expected_pixel_data_size), total_required_offset)) {
+        return BitmapError::InvalidImageData;
     }
-
+    if (total_required_offset > bmp_data.size()) {
+        return BitmapError::InvalidImageData;
+    }
 
     // 7. Resize temp_bmp_file.bitmapData and copy the pixel data
     temp_bmp_file.bitmapData.resize(expected_pixel_data_size);
@@ -144,9 +119,8 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
       std::memcpy(temp_bmp_file.bitmapData.data(), bmp_data.data() + fh.bfOffBits, expected_pixel_data_size);
     }
 
-
     // 8. Call temp_bmp_file.SetValid()
-    temp_bmp_file.SetValid(); // Assuming this marks the file as ready for CreateMatrixFromBitmap
+    temp_bmp_file.SetValid();
 
     // 9. Call CreateMatrixFromBitmap
     Matrix::Matrix<::Pixel> image_matrix = ::CreateMatrixFromBitmap(temp_bmp_file);
@@ -158,15 +132,20 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
 
     // 11. Convert image_matrix to BmpTool::Bitmap bmp_out
     Bitmap bmp_out;
-    bmp_out.w = image_matrix.cols();
-    bmp_out.h = image_matrix.rows();
+    bmp_out.w = static_cast<uint32_t>(image_matrix.cols());
+    bmp_out.h = static_cast<uint32_t>(image_matrix.rows());
     bmp_out.bpp = 32; // Output is always 32bpp RGBA
 
     // Safeguard against overflow for bmp_out.data.resize
-    if (bmp_out.h > 0 && bmp_out.w > (std::numeric_limits<size_t>::max() / bmp_out.h / 4)) { // 4 bytes per pixel
-         return BitmapError::InvalidImageData; // Output image dimensions too large
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bmp_out.w), static_cast<size_t>(bmp_out.h), total_pixels)) {
+        return BitmapError::InvalidImageData;
     }
-    bmp_out.data.resize(static_cast<size_t>(bmp_out.w) * bmp_out.h * 4);
+    size_t total_bytes = 0;
+    if (!SafeMath::multiply(total_pixels, static_cast<size_t>(4), total_bytes) || total_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::InvalidImageData;
+    }
+    bmp_out.data.resize(total_bytes);
 
     for (uint32_t y = 0; y < bmp_out.h; ++y) {
         const ::Pixel* src_bgra_pixels_row = &image_matrix[y][0]; // ::Pixel is BGRA
@@ -237,39 +216,26 @@ void internal_swizzle_bgra_to_rgba_simd(const ::Pixel* src_bgra_pixels, uint8_t*
 // The NEW BmpTool::save function using the external library
 Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_bmp_buffer) {
     // 1. Input Validation from BmpTool::Bitmap
-    if (bitmap_in.w == 0 || bitmap_in.h == 0) {
-        return BitmapError::InvalidImageData; // Cannot save an empty image
-    }
-    if (bitmap_in.bpp != 32) {
-        // This implementation expects RGBA data from bitmap_in.
-        return BitmapError::UnsupportedBpp; 
-    }
-
-    const size_t expected_data_size = static_cast<size_t>(bitmap_in.w) * bitmap_in.h * 4; // 4 bytes per pixel for 32 bpp
-    if (bitmap_in.data.size() < expected_data_size) {
-        // The provided pixel data buffer is smaller than what the width, height, and bpp imply.
-        return BitmapError::InvalidImageData; // Or a more specific error like InsufficientPixelData
-    }
-
-    // 2. Convert BmpTool::Bitmap (RGBA) to Matrix<::Pixel> (RGBA)
-    // Assuming ::Pixel struct has members .red, .green, .blue, .alpha
-    // Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // This was the first declaration
-    // The actual first useful declaration is just below, after input validation.
-
-    // 1. Perform input validation on bitmap_in
-    if (bitmap_in.w == 0 || bitmap_in.h == 0) {
+    if (bitmap_in.w == 0 || bitmap_in.h == 0 || 
+        bitmap_in.w > SafeMath::MAX_SAFE_DIMENSION || bitmap_in.h > SafeMath::MAX_SAFE_DIMENSION) {
         return BitmapError::InvalidImageData;
     }
     if (bitmap_in.bpp != 32) {
         return BitmapError::UnsupportedBpp; // Expects 32bpp RGBA input
     }
-    const size_t expected_input_data_size = static_cast<size_t>(bitmap_in.w) * bitmap_in.h * 4; // 4 bytes for RGBA
-    if (bitmap_in.data.size() < expected_input_data_size) {
-        return BitmapError::InvalidImageData; // Not enough pixel data provided
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap_in.w), static_cast<size_t>(bitmap_in.h), total_pixels)) {
+        return BitmapError::InvalidImageData;
+    }
+    size_t expected_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, static_cast<size_t>(4), expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap_in.data.size() < expected_data_size) {
+        return BitmapError::InvalidImageData;
     }
 
     // 2. Convert BmpTool::Bitmap (RGBA) to Matrix::Matrix<::Pixel> (BGRA)
-    // This is the correct place for the image_matrix declaration and initialization
     Matrix::Matrix<::Pixel> image_matrix(bitmap_in.h, bitmap_in.w); // Matrix constructor is (rows, cols)
     for (uint32_t y = 0; y < bitmap_in.h; ++y) {
         const uint8_t* src_rgba_data_row = &bitmap_in.data[(static_cast<size_t>(y) * bitmap_in.w * 4)];
@@ -282,24 +248,15 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_b
 
     // 4. If !temp_bmp_file.IsValid(), return BitmapError::UnknownError
     if (!temp_bmp_file.IsValid()) {
-        return BitmapError::UnknownError; // Error during CreateBitmapFromMatrix
+        return BitmapError::UnknownError;
     }
 
-    // 5. Calculate total_required_size
-    // Ensure bfSize in the header is correct. CreateBitmapFromMatrix should set this.
-    // Also, bfOffBits should be correctly set by CreateBitmapFromMatrix.
-    // We rely on temp_bmp_file.bitmapData.size() for the pixel data size.
-    uint32_t total_required_size = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + temp_bmp_file.bitmapData.size();
-
-    // As an integrity check, bfSize from the library should match calculated total size
-    if (temp_bmp_file.bitmapFileHeader.bfSize != total_required_size) {
-       // This might indicate an internal issue with CreateBitmapFromMatrix or a misunderstanding of its output.
-       // For robustness, one might choose to trust total_required_size or return an error.
-       // Given the instructions, we proceed with total_required_size for buffer check.
-       // Optionally: temp_bmp_file.bitmapFileHeader.bfSize = total_required_size;
-       // And: temp_bmp_file.bitmapFileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    // 5. Calculate total_required_size safely
+    size_t headers_size = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    size_t total_required_size = 0;
+    if (!SafeMath::add(headers_size, temp_bmp_file.bitmapData.size(), total_required_size) || total_required_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::InvalidImageData;
     }
-
 
     // 6. If out_bmp_buffer.size() < total_required_size, return BitmapError::OutputBufferTooSmall
     if (out_bmp_buffer.size() < total_required_size) {

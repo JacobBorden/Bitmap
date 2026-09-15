@@ -4,6 +4,7 @@
 #include <vector>    // For std::vector, used by Matrix class and underlying bitmap data.
 #include <cstring>   // For std::memcpy, used in SIMD NEON path
 #include "../simd_utils.hpp" // Added include
+#include "../safe_math.hpp"
 
 // Define BI_RGB as 0 if not already defined, to ensure cross-platform compatibility for bitmap compression type.
 #ifndef BI_RGB
@@ -256,67 +257,61 @@ void internal_convert_bgr_to_bgra_simd(const uint8_t* src_row_bgr_ptr, ::Pixel* 
 // into a Matrix::Matrix<Pixel> for easier pixel manipulation.
 Matrix::Matrix<Pixel> CreateMatrixFromBitmap(Bitmap::File bitmapFile)
 {
-    // Initialize the matrix with dimensions from the bitmap header.
-    // Note: Bitmap rows are often stored bottom-up, but matrix access is typically top-down.
-    // The loop structure (i from 0 to rows-1) handles this naturally if pixel data is ordered correctly.
-    Matrix::Matrix<Pixel> imageMatrix(bitmapFile.bitmapInfoHeader.biHeight, bitmapFile.bitmapInfoHeader.biWidth);
-
-
-    if (imageMatrix.rows() <= 0 || imageMatrix.cols() <= 0) {
-        // Or handle as an error, depending on how Matrix constructor handles non-positive dims.
-        // Assuming Matrix constructor ensures rows/cols are positive if biHeight/biWidth were,
-        // or if biHeight is negative, it uses abs(biHeight). Let's use imageMatrix dimensions.
-        return imageMatrix; // Return empty/default matrix
+    uint32_t abs_height = 0;
+    if (!BmpTool::SafeMath::getSafeAbsoluteHeight(bitmapFile.bitmapInfoHeader.biHeight, abs_height)) {
+        return Matrix::Matrix<Pixel>(0, 0);
     }
+    if (bitmapFile.bitmapInfoHeader.biWidth <= 0 || 
+        static_cast<uint32_t>(bitmapFile.bitmapInfoHeader.biWidth) > BmpTool::SafeMath::MAX_SAFE_DIMENSION) {
+        return Matrix::Matrix<Pixel>(0, 0);
+    }
+    uint32_t width = static_cast<uint32_t>(bitmapFile.bitmapInfoHeader.biWidth);
 
     unsigned int bpp = bitmapFile.bitmapInfoHeader.biBitCount;
     if (bpp != 24 && bpp != 32) {
-        // This function only handles 24 and 32 bpp as per its structure.
-        // std::cerr << "CreateMatrixFromBitmap Error: Unsupported bit depth " << bpp << std::endl;
-        return imageMatrix; // Return empty/default matrix
+        return Matrix::Matrix<Pixel>(0, 0);
     }
 
-    size_t bytes_per_pixel = bpp / 8;
-    // Use uint64_t for expected_data_size to prevent overflow during this calculation
-    // if imageMatrix.rows() or imageMatrix.cols() are very large.
-    uint64_t expected_data_size = static_cast<uint64_t>(imageMatrix.rows()) * imageMatrix.cols() * bytes_per_pixel;
-
-    if (static_cast<uint64_t>(bitmapFile.bitmapData.size()) < expected_data_size) {
-        // std::cerr << "CreateMatrixFromBitmap Error: bitmapData.size() " << bitmapFile.bitmapData.size()
-        //           << " is less than expected_data_size " << expected_data_size
-        //           << " for dimensions " << imageMatrix.rows() << "x" << imageMatrix.cols()
-        //           << " at " << bpp << "bpp." << std::endl;
-        return imageMatrix; // Return empty/default matrix as data is insufficient
+    uint32_t expected_data_size = 0;
+    if (!BmpTool::SafeMath::computePixelDataSize(width, abs_height, static_cast<uint16_t>(bpp), expected_data_size)) {
+        return Matrix::Matrix<Pixel>(0, 0);
     }
 
-    if (bitmapFile.bitmapInfoHeader.biBitCount == 32) // For 32-bit bitmaps (BGRA)
+    if (bitmapFile.bitmapData.size() < expected_data_size) {
+        return Matrix::Matrix<Pixel>(0, 0);
+    }
+
+    Matrix::Matrix<Pixel> imageMatrix(abs_height, width);
+    if (imageMatrix.rows() == 0 || imageMatrix.cols() == 0) {
+        return imageMatrix;
+    }
+
+    if (bpp == 32) // For 32-bit bitmaps (BGRA)
     {
-        int k = 0; // Index for bitmapFile.bitmapData
-        for (int i = 0; i < imageMatrix.rows(); i++)
-            for (int j = 0; j < imageMatrix.cols(); j++)
+        size_t k = 0;
+        for (size_t i = 0; i < imageMatrix.rows(); i++)
+            for (size_t j = 0; j < imageMatrix.cols(); j++)
             {
-                // Pixel data in bitmap files is typically stored in BGR or BGRA order.
                 imageMatrix[i][j].blue = bitmapFile.bitmapData[k];
                 imageMatrix[i][j].green = bitmapFile.bitmapData[k + 1];
                 imageMatrix[i][j].red = bitmapFile.bitmapData[k + 2];
                 imageMatrix[i][j].alpha = bitmapFile.bitmapData[k + 3];
-                k += 4; // Move to the next pixel (4 bytes)
+                k += 4;
             }
     }
-    else if (bitmapFile.bitmapInfoHeader.biBitCount == 24) // For 24-bit bitmaps (BGR)
+    else if (bpp == 24) // For 24-bit bitmaps (BGR)
     {
-        // Calculate padding if necessary, though source data in bitmapFile.bitmapData should be packed according to BMP spec (rows padded to 4 bytes)
-        // However, we process pixel by pixel here from the linear bitmapData.
-        // The number of bytes per row in source data:
-        uint32_t src_bytes_per_row = (static_cast<uint32_t>(imageMatrix.cols()) * 3 + 3) & ~3u; // BMP rows are padded to 4 bytes for BGR
+        uint32_t src_bytes_per_row = 0;
+        if (!BmpTool::SafeMath::computeRowStride(width, 24, src_bytes_per_row)) {
+            return Matrix::Matrix<Pixel>(0, 0);
+        }
 
-        for (int i = 0; i < imageMatrix.rows(); i++) {
-            const uint8_t* src_row_bgr_ptr = bitmapFile.bitmapData.data() + (static_cast<size_t>(i) * src_bytes_per_row);
+        for (size_t i = 0; i < imageMatrix.rows(); i++) {
+            const uint8_t* src_row_bgr_ptr = bitmapFile.bitmapData.data() + (i * src_bytes_per_row);
             ::Pixel* dest_row_pixel_ptr = &imageMatrix[i][0];
             internal_convert_bgr_to_bgra_simd(src_row_bgr_ptr, dest_row_pixel_ptr, imageMatrix.cols());
         }
     }
-    // Note: Other bit depths (e.g., 1, 4, 8, 16-bit) would require more complex handling.
 
     return imageMatrix;
 }
@@ -328,41 +323,58 @@ Bitmap::File CreateBitmapFromMatrix(const Matrix::Matrix<Pixel>& imageMatrix)
 {
     Bitmap::File bitmapFile;
 
+    if (imageMatrix.rows() == 0 || imageMatrix.cols() == 0 ||
+        imageMatrix.rows() > BmpTool::SafeMath::MAX_SAFE_DIMENSION ||
+        imageMatrix.cols() > BmpTool::SafeMath::MAX_SAFE_DIMENSION) {
+        return bitmapFile;
+    }
+
+    size_t total_pixels = 0;
+    if (!BmpTool::SafeMath::multiply(imageMatrix.rows(), imageMatrix.cols(), total_pixels)) {
+        return bitmapFile;
+    }
+    size_t imageSize = 0;
+    if (!BmpTool::SafeMath::multiply(total_pixels, static_cast<size_t>(4), imageSize) || 
+        imageSize > BmpTool::SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return bitmapFile;
+    }
+
     // Populate BITMAPINFOHEADER
     bitmapFile.bitmapInfoHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bitmapFile.bitmapInfoHeader.biWidth = imageMatrix.cols();
-    bitmapFile.bitmapInfoHeader.biHeight = imageMatrix.rows(); // Positive height for bottom-up DIB.
+    bitmapFile.bitmapInfoHeader.biWidth = static_cast<int32_t>(imageMatrix.cols());
+    bitmapFile.bitmapInfoHeader.biHeight = static_cast<int32_t>(imageMatrix.rows());
     bitmapFile.bitmapInfoHeader.biPlanes = 1;
-    bitmapFile.bitmapInfoHeader.biBitCount = 32; // Outputting as 32-bit BGRA.
-    bitmapFile.bitmapInfoHeader.biCompression = BI_RGB; // Uncompressed.
-    // Calculate image size in bytes for a 32-bit image.
-    int imageSize = imageMatrix.size() * (32 / 8); // imageMatrix.size() is rows * cols.
-    bitmapFile.bitmapInfoHeader.biSizeImage = imageSize;
-    // Resize the vector to hold the pixel data.
-    bitmapFile.bitmapData.resize(imageSize);
+    bitmapFile.bitmapInfoHeader.biBitCount = 32;
+    bitmapFile.bitmapInfoHeader.biCompression = BI_RGB;
+    bitmapFile.bitmapInfoHeader.biSizeImage = static_cast<uint32_t>(imageSize);
 
     // Populate BITMAPFILEHEADER
-    int offsetSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER); // Offset to pixel data.
-    int fileSize = offsetSize + imageSize; // Total file size.
-    bitmapFile.bitmapFileHeader.bfSize = fileSize;
-    bitmapFile.bitmapFileHeader.bfType = 0x4D42; // BM signature for bitmap files.
-    bitmapFile.bitmapFileHeader.bfOffBits = offsetSize;
+    size_t offsetSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    size_t fileSize = 0;
+    if (!BmpTool::SafeMath::add(offsetSize, imageSize, fileSize) || fileSize > std::numeric_limits<uint32_t>::max()) {
+        return bitmapFile;
+    }
+
+    bitmapFile.bitmapFileHeader.bfSize = static_cast<uint32_t>(fileSize);
+    bitmapFile.bitmapFileHeader.bfType = 0x4D42;
+    bitmapFile.bitmapFileHeader.bfOffBits = static_cast<uint32_t>(offsetSize);
     bitmapFile.bitmapFileHeader.bfReserved1 = 0;
     bitmapFile.bitmapFileHeader.bfReserved2 = 0;
 
-    int k = 0; // Index for bitmapFile.bitmapData
-    for (int i = 0; i < imageMatrix.rows(); i++)
-        for (int j = 0; j < imageMatrix.cols(); j++)
+    bitmapFile.bitmapData.resize(imageSize);
+
+    size_t k = 0;
+    for (size_t i = 0; i < imageMatrix.rows(); i++)
+        for (size_t j = 0; j < imageMatrix.cols(); j++)
         {
-            // Store pixel data in BGRA order.
             bitmapFile.bitmapData[k] = imageMatrix[i][j].blue;
             bitmapFile.bitmapData[k + 1] = imageMatrix[i][j].green;
             bitmapFile.bitmapData[k + 2] = imageMatrix[i][j].red;
             bitmapFile.bitmapData[k + 3] = imageMatrix[i][j].alpha;
-            k += 4; // Move to the next pixel (4 bytes)
+            k += 4;
         }
 
-    bitmapFile.SetValid(); // Mark the bitmap file as valid.
+    bitmapFile.SetValid();
     return bitmapFile;
 }
 
