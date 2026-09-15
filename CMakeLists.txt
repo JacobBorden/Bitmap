@@ -1,63 +1,63 @@
-cmake_minimum_required(VERSION 3.16...3.30)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+cmake_minimum_required(VERSION 3.10)
+project(bitmap VERSION 1.0.0)
 
-project(bitmap VERSION 1.0.0 LANGUAGES CXX)
+option(ENABLE_FUZZING "Enable fuzzing builds" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_EXTENSIONS OFF)
+if(WIN32)
+  add_compile_definitions(NOMINMAX)
+endif()
+
+if(ENABLE_FUZZING)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    find_program(CLANG_COMPILER NAMES clang++ clang)
+    if(CLANG_COMPILER)
+      set(CMAKE_CXX_COMPILER ${CLANG_COMPILER})
+    else()
+      message(WARNING "Clang compiler not found. Disabling fuzzing.")
+      set(ENABLE_FUZZING OFF)
+    endif()
+  endif()
+
+  if(ENABLE_FUZZING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(STATUS "Fuzzing enabled. Using Clang compiler.")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fsanitize=address,undefined,fuzzer-no-link")
+    # For linking fuzz targets, we'll use -fsanitize=fuzzer later
+  else()
+    message(STATUS "Fuzzing disabled or Clang not used.")
+  endif()
+endif()
 
 include(CTest)
 enable_testing()
-include(FetchContent)
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/matrix/CMakeLists.txt")
-    add_subdirectory(dependencies/matrix)
-else()
-    FetchContent_Declare(
-        matrix
-        GIT_REPOSITORY https://github.com/JacobBorden/Matrix.git
-        GIT_TAG master
-    )
-    FetchContent_MakeAvailable(matrix)
-endif()
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/bitmapfile/CMakeLists.txt")
-    add_subdirectory(dependencies/bitmapfile)
-else()
-    FetchContent_Declare(
-        bitmapfile
-        GIT_REPOSITORY https://github.com/JacobBorden/BitmapFile.git
-        GIT_TAG master
-    )
-    FetchContent_MakeAvailable(bitmapfile)
-endif()
-
-add_library(bitmap STATIC src/bitmap.cpp)
-target_include_directories(bitmap PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/matrix
-    ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/bitmapfile/src
+# Add your main library with all sources
+add_library(bitmap STATIC 
+    src/bitmap/bitmap.cpp
+    src/bitmapfile/bitmap_file.cpp
+    src/format/bitmap.cpp
 )
-target_link_libraries(bitmap PUBLIC matrix bitmapfile)
 
+# Executable for main.cpp (if it's a demo or separate utility)
 add_executable(testexe main.cpp)
 target_link_libraries(testexe PRIVATE bitmap)
 
-# GoogleTest
-FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG v1.15.2
+target_include_directories(bitmap PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/bitmapfile
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/matrix
 )
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+# GoogleTest
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+)
 FetchContent_MakeAvailable(googletest)
 
-include(GoogleTest)
-add_executable(bitmap_tests tests/test_bitmap.cpp)
-target_link_libraries(bitmap_tests PRIVATE bitmap GTest::gtest_main)
-gtest_discover_tests(bitmap_tests)
-
-set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
-include(CPack)
+# Add subdirectory for tests (enables gtest_discover_tests and test auto-discovery)
+add_subdirectory(tests)

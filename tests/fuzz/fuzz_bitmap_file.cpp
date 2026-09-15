@@ -1,0 +1,107 @@
+#include "../../src/bitmapfile/bitmap_file.h" // For Bitmap::File
+#include <cstdint>
+#include <vector>
+#include <string>
+#include <cstring>   // For std::memcpy
+#include <algorithm> // For std::remove_if, std::min
+#include <cctype>    // For std::isprint
+#include <stdexcept> // For std::bad_alloc
+
+// Helper to consume data from the fuzzer input
+template <typename T>
+T Consume(const uint8_t** data_ptr, size_t* size_ptr) {
+    if (*size_ptr < sizeof(T)) {
+        return T{};
+    }
+    T value;
+    std::memcpy(&value, *data_ptr, sizeof(T));
+    *data_ptr += sizeof(T);
+    *size_ptr -= sizeof(T);
+    return value;
+}
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
+    if (Size < 1) { 
+        return 0;
+    }
+
+    const uint8_t* initial_Data = Data;
+    size_t initial_Size = Size;
+
+    std::string dummy_filename = "fuzz.bmp";
+    size_t max_filename_len = std::min((size_t)32, Size); 
+    
+    uint8_t filename_len_byte = Consume<uint8_t>(&Data, &Size);
+    size_t filename_len = static_cast<size_t>(filename_len_byte) % max_filename_len;
+
+    if (filename_len > 0 && Size >= filename_len) {
+        dummy_filename.assign(reinterpret_cast<const char*>(Data), filename_len);
+        dummy_filename.erase(std::remove_if(dummy_filename.begin(), dummy_filename.end(), [](char c){
+            return !std::isprint(static_cast<unsigned char>(c)) || c == '/' || c == '\\' || c == '\0';
+        }), dummy_filename.end());
+        
+        Data += filename_len;
+        Size -= filename_len;
+
+        if (dummy_filename.empty() || dummy_filename.length() > max_filename_len) { 
+            dummy_filename = "default_fuzz.bmp";
+        }
+    } else {
+        dummy_filename = "short_fuzz.bmp";
+    }
+
+    Bitmap::File bmp_file_manual;
+
+    if (Size >= sizeof(BITMAPFILEHEADER)) {
+        std::memcpy(&bmp_file_manual.bitmapFileHeader, Data, sizeof(BITMAPFILEHEADER));
+        Data += sizeof(BITMAPFILEHEADER);
+        Size -= sizeof(BITMAPFILEHEADER);
+
+        if (Size >= sizeof(BITMAPINFOHEADER)) {
+            std::memcpy(&bmp_file_manual.bitmapInfoHeader, Data, sizeof(BITMAPINFOHEADER));
+            Data += sizeof(BITMAPINFOHEADER);
+            Size -= sizeof(BITMAPINFOHEADER);
+
+            if (Size > 0) {
+                try {
+                    const size_t MAX_BITMAP_DATA_ALLOC = 1024 * 1024 * 4; // 4MB limit
+                    size_t data_to_assign = std::min(Size, MAX_BITMAP_DATA_ALLOC);
+                    bmp_file_manual.bitmapData.assign(Data, Data + data_to_assign);
+                } catch (const std::bad_alloc&) {
+                    bmp_file_manual.bitmapData.clear();
+                }
+            }
+            
+            uint8_t set_valid_choice = 0;
+            if (Size > 0) { // Check if any data is left for this choice
+                set_valid_choice = Consume<uint8_t>(&Data, &Size);
+            } else if (initial_Size > (initial_Data - Data)) { // Check if any byte left from original overall
+                 // This condition might be tricky if Data hasn't moved or Size became 0 exactly at a boundary
+                 // A simpler way: if Size is 0 here, use a default for set_valid_choice
+                 set_valid_choice = initial_Data[initial_Size -1]; // Fallback to last byte of original input
+            }
+
+
+            if (set_valid_choice % 2 == 0) {
+                 bmp_file_manual.SetValid();
+            }
+        }
+    }
+
+    [[maybe_unused]] bool is_valid = bmp_file_manual.IsValid();
+    
+    bmp_file_manual.Rename(dummy_filename);
+    [[maybe_unused]] std::string current_filename = bmp_file_manual.Filename();
+
+    if (is_valid) { 
+        bmp_file_manual.Save(); 
+        bmp_file_manual.SaveAs(dummy_filename + "_saveas.bmp");
+    }
+
+    Bitmap::File bmp_file_default;
+    [[maybe_unused]] bool is_valid_default = bmp_file_default.IsValid();
+    [[maybe_unused]] std::string fn_default = bmp_file_default.Filename(); 
+
+
+    return 0;
+}
