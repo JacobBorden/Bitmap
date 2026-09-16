@@ -3,6 +3,7 @@
 #include <algorithm> // For std::min and std::max, used in ApplyBoxBlur and color adjustments.
 #include <vector>    // For std::vector, used by Matrix class and underlying bitmap data.
 #include <cstring>   // For std::memcpy, used in SIMD NEON path
+#include <cmath>     // For std::isfinite
 #include "../simd_utils.hpp" // Added include
 #include "../safe_math.hpp"
 
@@ -139,6 +140,7 @@ Bitmap::File ApplyBoxBlur(Bitmap::File bitmapFile, int blurRadius)
         // No blur or invalid radius, return original image without processing.
         return bitmapFile;
     }
+    blurRadius = BmpTool::SafeMath::clamp(blurRadius, 0, BmpTool::SafeMath::MAX_SAFE_BLUR_RADIUS);
 
     Matrix::Matrix<Pixel> originalMatrix = CreateMatrixFromBitmap(bitmapFile);
     Matrix::Matrix<Pixel> blurredMatrix(originalMatrix.rows(), originalMatrix.cols());
@@ -392,6 +394,7 @@ Bitmap::File GreyscaleImage(Bitmap::File bitmapFile)
 Bitmap::File ShrinkImage(Bitmap::File bitmapFile, int scaleFactor)
 {
     if (scaleFactor <= 0) return bitmapFile; // Or handle error appropriately
+    scaleFactor = BmpTool::SafeMath::clamp(scaleFactor, 1, BmpTool::SafeMath::MAX_SAFE_SCALE_FACTOR);
 
     Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
     // Calculate dimensions of the new, shrunken matrix.
@@ -401,8 +404,8 @@ Bitmap::File ShrinkImage(Bitmap::File bitmapFile, int scaleFactor)
 
     Matrix::Matrix<Pixel> shrunkenMatrix(newRows, newCols);
 
-    for (int i = 0; i < shrunkenMatrix.rows(); i++)
-        for (int j = 0; j < shrunkenMatrix.cols(); j++)
+    for (size_t i = 0; i < static_cast<size_t>(shrunkenMatrix.rows()); i++)
+        for (size_t j = 0; j < static_cast<size_t>(shrunkenMatrix.cols()); j++)
         {
             unsigned int averageRed = 0;
             unsigned int averageGreen = 0;
@@ -411,13 +414,14 @@ Bitmap::File ShrinkImage(Bitmap::File bitmapFile, int scaleFactor)
             int numPixels = 0; // Count of pixels in the block for averaging.
 
             // Iterate over the block of pixels in the original image that corresponds to the current pixel in the shrunken image.
-            for (int k = 0; (k < scaleFactor) && ((k + (i * scaleFactor)) < imageMatrix.rows()); k++)
-                for (int l = 0; (l < scaleFactor) && ((l + (j * scaleFactor)) < imageMatrix.cols()); l++)
+            for (size_t k = 0; (k < static_cast<size_t>(scaleFactor)) && ((k + (i * static_cast<size_t>(scaleFactor))) < static_cast<size_t>(imageMatrix.rows())); k++)
+                for (size_t l = 0; (l < static_cast<size_t>(scaleFactor)) && ((l + (j * static_cast<size_t>(scaleFactor))) < static_cast<size_t>(imageMatrix.cols())); l++)
                 {
-                    averageRed += imageMatrix[k + (i * scaleFactor)][l + (j * scaleFactor)].red;
-                    averageGreen += imageMatrix[k + (i * scaleFactor)][l + (j * scaleFactor)].green;
-                    averageBlue += imageMatrix[k + (i * scaleFactor)][l + (j * scaleFactor)].blue;
-                    averageAlpha += imageMatrix[k + (i * scaleFactor)][l + (j * scaleFactor)].alpha;
+                    const auto& px = imageMatrix[k + (i * static_cast<size_t>(scaleFactor))][l + (j * static_cast<size_t>(scaleFactor))];
+                    averageRed += px.red;
+                    averageGreen += px.green;
+                    averageBlue += px.blue;
+                    averageAlpha += px.alpha;
                     numPixels++;
                 }
 
@@ -511,6 +515,9 @@ Bitmap::File ChangeImageContrast(Bitmap::File bitmapFile, float contrast)
 // Only applies if blue is the dominant or co-dominant color.
 Pixel ChangePixelSaturationBlue(Pixel pixel, float saturation)
 {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.green + pixel.blue) / 3;
     // Check if blue is a dominant component to avoid desaturating other colors.
     if ((pixel.blue >= pixel.red) && (pixel.blue >= pixel.green)) // Simplified condition, original was (pixel.blue >= pixel.red) && (pixel.blue >= pixel.red)
@@ -526,6 +533,9 @@ Pixel ChangePixelSaturationBlue(Pixel pixel, float saturation)
 // Only applies if green is the dominant or co-dominant color.
 Pixel ChangePixelSaturationGreen(Pixel pixel, float saturation)
 {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.green + pixel.blue) / 3;
     if ((pixel.green >= pixel.red) && (pixel.green >= pixel.blue))
     {
@@ -540,6 +550,9 @@ Pixel ChangePixelSaturationGreen(Pixel pixel, float saturation)
 // Only applies if red is the dominant or co-dominant color.
 Pixel ChangePixelSaturationRed(Pixel pixel, float saturation)
 {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.green + pixel.blue) / 3;
     if ((pixel.red >= pixel.blue) && (pixel.red >= pixel.green))
     {
@@ -553,6 +566,9 @@ Pixel ChangePixelSaturationRed(Pixel pixel, float saturation)
 // Changes the saturation of the magenta component (red and blue channels) of a single pixel.
 Pixel ChangePixelSaturationMagenta(Pixel pixel, float saturation)
 {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.blue + pixel.green) / 3;
     int magenta_component = std::min(pixel.red, pixel.blue); // The "amount" of magenta.
     int redOffset = pixel.red - magenta_component;   // How much "more red" than magenta.
@@ -572,6 +588,9 @@ Pixel ChangePixelSaturationMagenta(Pixel pixel, float saturation)
 // Changes the saturation of the yellow component (red and green channels) of a single pixel.
 Pixel ChangePixelSaturationYellow(Pixel pixel, float saturation)
 {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.blue + pixel.green) / 3;
     int yellow_component = std::min(pixel.red, pixel.green); // The "amount" of yellow.
     int redOffset = pixel.red - yellow_component;    // How much "more red" than yellow.
@@ -591,6 +610,9 @@ Pixel ChangePixelSaturationYellow(Pixel pixel, float saturation)
 // Changes the saturation of the cyan component (green and blue channels) of a single pixel.
 Pixel ChangePixelSaturationCyan(Pixel pixel, float saturation)
 {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.blue + pixel.green) / 3;
     int cyan_component = std::min(pixel.blue, pixel.green); // The "amount" of cyan.
     int greenOffset = pixel.green - cyan_component; // How much "more green" than cyan.
@@ -683,6 +705,9 @@ Bitmap::File ChangeImageSaturationCyan(Bitmap::File bitmapFile, float saturation
 // This function adjusts all color channels if blue is dominant, effectively changing the pixel's overall brightness.
 Pixel ChangePixelLuminanceBlue(Pixel pixel, float luminance)
 {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return pixel;
+    }
     if ((pixel.blue >= pixel.red) && (pixel.blue >= pixel.green)) // Only if blue is dominant or co-dominant
     {
         int average = (pixel.red + pixel.green + pixel.blue) / 3;
@@ -705,6 +730,9 @@ Pixel ChangePixelLuminanceBlue(Pixel pixel, float luminance)
 // Adjusts all color channels if green is dominant.
 Pixel ChangePixelLuminanceGreen(Pixel pixel, float luminance)
 {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return pixel;
+    }
     if ((pixel.green >= pixel.red) && (pixel.green >= pixel.blue)) // Only if green is dominant or co-dominant
     {
         int average = (pixel.red + pixel.green + pixel.blue) / 3;
@@ -727,6 +755,9 @@ Pixel ChangePixelLuminanceGreen(Pixel pixel, float luminance)
 // Adjusts all color channels if red is dominant.
 Pixel ChangePixelLuminanceRed(Pixel pixel, float luminance)
 {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return pixel;
+    }
     if ((pixel.red >= pixel.green) && (pixel.red >= pixel.blue)) // Only if red is dominant or co-dominant
     {
         int average = (pixel.red + pixel.green + pixel.blue) / 3;
@@ -749,6 +780,9 @@ Pixel ChangePixelLuminanceRed(Pixel pixel, float luminance)
 // Adjusts all color channels if magenta (min(R,B)) is more intense than the pixel's average intensity.
 Pixel ChangePixelLuminanceMagenta(Pixel pixel, float luminance)
 {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.green + pixel.blue) / 3;
     int magenta_component = std::min(pixel.red, pixel.blue);
     if (magenta_component > average) // Only if magenta component is above average intensity
@@ -772,6 +806,9 @@ Pixel ChangePixelLuminanceMagenta(Pixel pixel, float luminance)
 // Adjusts all color channels if yellow (min(R,G)) is more intense than the pixel's average intensity.
 Pixel ChangePixelLuminanceYellow(Pixel pixel, float luminance)
 {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.green + pixel.blue) / 3;
     int yellow_component = std::min(pixel.red, pixel.green);
     if (yellow_component > average) // Only if yellow component is above average intensity
@@ -795,6 +832,9 @@ Pixel ChangePixelLuminanceYellow(Pixel pixel, float luminance)
 // Adjusts all color channels if cyan (min(G,B)) is more intense than the pixel's average intensity.
 Pixel ChangePixelLuminanceCyan(Pixel pixel, float luminance)
 {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.green + pixel.blue) / 3;
     int cyan_component = std::min(pixel.green, pixel.blue);
     if (cyan_component > average) // Only if cyan component is above average intensity
@@ -899,6 +939,9 @@ Pixel GreyScalePixel(Pixel pixel) {
 
 // Changes the brightness of a pixel. The brightness is adjusted by scaling the pixel's RGB values around their average.
 Pixel ChangePixelBrightness(Pixel pixel, float brightness) {
+    if (!std::isfinite(brightness) || brightness < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.green + pixel.blue) / 3;
     int newAverage = static_cast<int>(average * brightness);
     int new_red = (pixel.red - average) + newAverage;
@@ -912,6 +955,9 @@ Pixel ChangePixelBrightness(Pixel pixel, float brightness) {
 
 // Changes the saturation of a pixel. Increases or decreases the pixel's RGB values based on their distance from the average.
 Pixel ChangePixelSaturation(Pixel pixel, float saturation) {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return pixel;
+    }
     int average = (pixel.red + pixel.green + pixel.blue) / 3;
     if (pixel.red > average)
         pixel.red = std::clamp(static_cast<int>((pixel.red - average) * saturation + average), 0, 255);
@@ -924,6 +970,9 @@ Pixel ChangePixelSaturation(Pixel pixel, float saturation) {
 
 // Changes the contrast of a pixel. Stretches or compresses the pixel's RGB values around the midpoint (128).
 Pixel ChangePixelContrast(Pixel pixel, float contrast) {
+    if (!std::isfinite(contrast) || contrast < 0.0f) {
+        return pixel;
+    }
     pixel.red = std::clamp(static_cast<int>(128 + (pixel.red - 128) * contrast), 0, 255);
     pixel.green = std::clamp(static_cast<int>(128 + (pixel.green - 128) * contrast), 0, 255);
     pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
@@ -931,33 +980,51 @@ Pixel ChangePixelContrast(Pixel pixel, float contrast) {
 }
 
 Pixel ChangePixelContrastRed(Pixel pixel, float contrast) {
+    if (!std::isfinite(contrast) || contrast < 0.0f) {
+        return pixel;
+    }
     pixel.red = std::clamp(static_cast<int>(128 + (pixel.red - 128) * contrast), 0, 255);
     return pixel;
 }
 
 Pixel ChangePixelContrastGreen(Pixel pixel, float contrast) {
+    if (!std::isfinite(contrast) || contrast < 0.0f) {
+        return pixel;
+    }
     pixel.green = std::clamp(static_cast<int>(128 + (pixel.green - 128) * contrast), 0, 255);
     return pixel;
 }
 
 Pixel ChangePixelContrastBlue(Pixel pixel, float contrast) {
+    if (!std::isfinite(contrast) || contrast < 0.0f) {
+        return pixel;
+    }
     pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
     return pixel;
 }
 
 Pixel ChangePixelContrastMagenta(Pixel pixel, float contrast) {
+    if (!std::isfinite(contrast) || contrast < 0.0f) {
+        return pixel;
+    }
     pixel.red = std::clamp(static_cast<int>(128 + (pixel.red - 128) * contrast), 0, 255);
     pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
     return pixel;
 }
 
 Pixel ChangePixelContrastYellow(Pixel pixel, float contrast) {
+    if (!std::isfinite(contrast) || contrast < 0.0f) {
+        return pixel;
+    }
     pixel.red = std::clamp(static_cast<int>(128 + (pixel.red - 128) * contrast), 0, 255);
     pixel.green = std::clamp(static_cast<int>(128 + (pixel.green - 128) * contrast), 0, 255);
     return pixel;
 }
 
 Pixel ChangePixelContrastCyan(Pixel pixel, float contrast) {
+    if (!std::isfinite(contrast) || contrast < 0.0f) {
+        return pixel;
+    }
     pixel.green = std::clamp(static_cast<int>(128 + (pixel.green - 128) * contrast), 0, 255);
     pixel.blue = std::clamp(static_cast<int>(128 + (pixel.blue - 128) * contrast), 0, 255);
     return pixel;

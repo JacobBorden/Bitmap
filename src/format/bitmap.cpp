@@ -6,6 +6,7 @@
 #include <limits>    // Required for std::numeric_limits
 #include <fstream>   // For std::ifstream
 #include <string>    // For std::string
+#include <cmath>     // For std::isfinite
 
 // Own project includes
 #include "../../include/bitmap.hpp" // For BmpTool::Bitmap, Result, BitmapError
@@ -79,21 +80,28 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
         return BitmapError::UnsupportedCompression;
     }
     if (ih.biBitCount != 24 && ih.biBitCount != 32) {
-        return BitmapError::UnsupportedBpp;
+        return BitmapError::InvalidColorDepth;
     }
     if (ih.biPlanes != 1) {
         return BitmapError::InvalidImageHeader;
     }
-    if (ih.biWidth <= 0 || static_cast<uint32_t>(ih.biWidth) > SafeMath::MAX_SAFE_DIMENSION) {
+    if (ih.biWidth <= 0) {
         return BitmapError::InvalidImageHeader;
     }
-    uint32_t abs_height = 0;
-    if (!SafeMath::getSafeAbsoluteHeight(ih.biHeight, abs_height)) {
+    if (static_cast<uint32_t>(ih.biWidth) > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+    if (ih.biHeight == 0 || ih.biHeight == std::numeric_limits<int32_t>::min()) {
         return BitmapError::InvalidImageHeader;
     }
+    int64_t raw_abs_height = (ih.biHeight < 0) ? -static_cast<int64_t>(ih.biHeight) : static_cast<int64_t>(ih.biHeight);
+    if (raw_abs_height > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+    uint32_t abs_height = static_cast<uint32_t>(raw_abs_height);
     size_t header_min_size = 0;
     if (!SafeMath::add(sizeof(BITMAPFILEHEADER), static_cast<size_t>(ih.biSize), header_min_size)) {
-        return BitmapError::InvalidFileHeader;
+        return BitmapError::DimensionOverflow;
     }
     if (fh.bfOffBits < header_min_size || fh.bfOffBits >= bmp_data.size()) {
         return BitmapError::InvalidFileHeader;
@@ -109,7 +117,7 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     // 5. Safely calculate the expected pixel data size
     uint32_t expected_pixel_data_size = 0;
     if (!SafeMath::computePixelDataSize(static_cast<uint32_t>(ih.biWidth), abs_height, ih.biBitCount, expected_pixel_data_size)) {
-        return BitmapError::InvalidImageData;
+        return BitmapError::DimensionOverflow;
     }
 
     // Strict physical payload validation:
@@ -121,7 +129,7 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     // 6. Check if fh.bfOffBits + expected_pixel_data_size <= bmp_data.size() without overflow
     size_t total_required_offset = 0;
     if (!SafeMath::add(static_cast<size_t>(fh.bfOffBits), static_cast<size_t>(expected_pixel_data_size), total_required_offset)) {
-        return BitmapError::InvalidImageData;
+        return BitmapError::DimensionOverflow;
     }
     if (total_required_offset > bmp_data.size()) {
         return BitmapError::PayloadTruncated;
@@ -130,8 +138,10 @@ Result<Bitmap, BitmapError> load(std::span<const uint8_t> bmp_data) {
     // If biSizeImage is declared larger, ensure the buffer contains the full declared payload
     if (ih.biSizeImage > expected_pixel_data_size) {
         size_t total_claimed_offset = 0;
-        if (!SafeMath::add(static_cast<size_t>(fh.bfOffBits), static_cast<size_t>(ih.biSizeImage), total_claimed_offset) ||
-            total_claimed_offset > bmp_data.size()) {
+        if (!SafeMath::add(static_cast<size_t>(fh.bfOffBits), static_cast<size_t>(ih.biSizeImage), total_claimed_offset)) {
+            return BitmapError::DimensionOverflow;
+        }
+        if (total_claimed_offset > bmp_data.size()) {
             return BitmapError::PayloadTruncated;
         }
     }
@@ -239,22 +249,24 @@ void internal_swizzle_bgra_to_rgba_simd(const ::Pixel* src_bgra_pixels, uint8_t*
 // The NEW BmpTool::save function using the external library
 Result<void, BitmapError> save(const Bitmap& bitmap_in, std::span<uint8_t> out_bmp_buffer) {
     // 1. Input Validation from BmpTool::Bitmap
-    if (bitmap_in.w == 0 || bitmap_in.h == 0 || 
-        bitmap_in.w > SafeMath::MAX_SAFE_DIMENSION || bitmap_in.h > SafeMath::MAX_SAFE_DIMENSION) {
+    if (bitmap_in.w == 0 || bitmap_in.h == 0) {
         return BitmapError::InvalidImageData;
     }
+    if (bitmap_in.w > SafeMath::MAX_SAFE_DIMENSION || bitmap_in.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
     if (bitmap_in.bpp != 32) {
-        return BitmapError::UnsupportedBpp; // Expects 32bpp RGBA input
+        return BitmapError::InvalidColorDepth; // Expects 32bpp RGBA input
     }
     size_t total_pixels = 0;
     if (!SafeMath::multiply(static_cast<size_t>(bitmap_in.w), static_cast<size_t>(bitmap_in.h), total_pixels)) {
-        return BitmapError::InvalidImageData;
+        return BitmapError::DimensionOverflow;
     }
     size_t expected_data_size = 0;
     if (!SafeMath::multiply(total_pixels, static_cast<size_t>(4), expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
-        return BitmapError::InvalidImageData;
+        return BitmapError::DimensionOverflow;
     }
-    if (bitmap_in.data.size() < expected_data_size) {
+    if (bitmap_in.data.empty() || bitmap_in.data.size() < expected_data_size) {
         return BitmapError::InvalidImageData;
     }
 
@@ -366,15 +378,20 @@ Result<void, BitmapError> save(const Bitmap& bitmap_in, const std::string& filep
     if (bitmap_in.w == 0 || bitmap_in.h == 0) {
         return BitmapError::InvalidImageData;
     }
+    if (bitmap_in.w > SafeMath::MAX_SAFE_DIMENSION || bitmap_in.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
     if (bitmap_in.bpp != 32) {
-        return BitmapError::UnsupportedBpp;
+        return BitmapError::InvalidColorDepth;
     }
-    // Calculate expected data size for RGBA
-    // Prevent overflow when calculating expected_input_data_size
-    if (bitmap_in.h > 0 && bitmap_in.w > (std::numeric_limits<uint32_t>::max() / bitmap_in.h / 4) ) {
-         return BitmapError::InvalidImageData; // Output image dimensions too large for uint32_t calculation
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap_in.w), static_cast<size_t>(bitmap_in.h), total_pixels)) {
+        return BitmapError::DimensionOverflow;
     }
-    const size_t expected_input_data_size = static_cast<size_t>(bitmap_in.w) * bitmap_in.h * 4;
+    size_t expected_input_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, static_cast<size_t>(4), expected_input_data_size) || expected_input_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
     if (bitmap_in.data.empty() || bitmap_in.data.size() < expected_input_data_size) {
         return BitmapError::InvalidImageData;
     }
@@ -456,6 +473,7 @@ Result<Bitmap, BitmapError> shrink(const Bitmap& bmp_tool_bitmap, int scaleFacto
     if (scaleFactor <= 0) {
         return BitmapError::InvalidImageData; // scaleFactor must be positive
     }
+    scaleFactor = SafeMath::clamp(scaleFactor, 1, SafeMath::MAX_SAFE_SCALE_FACTOR);
 
     // 2. Convert BmpTool::Bitmap (RGBA) to ::Bitmap::File (via Matrix::Matrix<::Pixel> BGRA)
     Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
@@ -705,6 +723,9 @@ Result<Bitmap, BitmapError> greyscale(const Bitmap& bmp_tool_bitmap) {
 }
 
 Result<Bitmap, BitmapError> changeBrightness(const Bitmap& bmp_tool_bitmap, float brightness) {
+    if (!std::isfinite(brightness) || brightness < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -744,6 +765,9 @@ Result<Bitmap, BitmapError> changeBrightness(const Bitmap& bmp_tool_bitmap, floa
 }
 
 Result<Bitmap, BitmapError> changeContrast(const Bitmap& bmp_tool_bitmap, float contrast) {
+    if (!std::isfinite(contrast) || contrast < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -783,6 +807,9 @@ Result<Bitmap, BitmapError> changeContrast(const Bitmap& bmp_tool_bitmap, float 
 }
 
 Result<Bitmap, BitmapError> changeSaturation(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -822,6 +849,9 @@ Result<Bitmap, BitmapError> changeSaturation(const Bitmap& bmp_tool_bitmap, floa
 }
 
 Result<Bitmap, BitmapError> changeSaturationBlue(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -861,6 +891,9 @@ Result<Bitmap, BitmapError> changeSaturationBlue(const Bitmap& bmp_tool_bitmap, 
 }
 
 Result<Bitmap, BitmapError> changeSaturationGreen(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -900,6 +933,9 @@ Result<Bitmap, BitmapError> changeSaturationGreen(const Bitmap& bmp_tool_bitmap,
 }
 
 Result<Bitmap, BitmapError> changeSaturationRed(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -939,6 +975,9 @@ Result<Bitmap, BitmapError> changeSaturationRed(const Bitmap& bmp_tool_bitmap, f
 }
 
 Result<Bitmap, BitmapError> changeSaturationMagenta(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -978,6 +1017,9 @@ Result<Bitmap, BitmapError> changeSaturationMagenta(const Bitmap& bmp_tool_bitma
 }
 
 Result<Bitmap, BitmapError> changeSaturationYellow(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -1017,6 +1059,9 @@ Result<Bitmap, BitmapError> changeSaturationYellow(const Bitmap& bmp_tool_bitmap
 }
 
 Result<Bitmap, BitmapError> changeSaturationCyan(const Bitmap& bmp_tool_bitmap, float saturation) {
+    if (!std::isfinite(saturation) || saturation < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -1056,6 +1101,9 @@ Result<Bitmap, BitmapError> changeSaturationCyan(const Bitmap& bmp_tool_bitmap, 
 }
 
 Result<Bitmap, BitmapError> changeLuminanceBlue(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -1095,6 +1143,9 @@ Result<Bitmap, BitmapError> changeLuminanceBlue(const Bitmap& bmp_tool_bitmap, f
 }
 
 Result<Bitmap, BitmapError> changeLuminanceGreen(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -1134,6 +1185,9 @@ Result<Bitmap, BitmapError> changeLuminanceGreen(const Bitmap& bmp_tool_bitmap, 
 }
 
 Result<Bitmap, BitmapError> changeLuminanceRed(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -1173,6 +1227,9 @@ Result<Bitmap, BitmapError> changeLuminanceRed(const Bitmap& bmp_tool_bitmap, fl
 }
 
 Result<Bitmap, BitmapError> changeLuminanceMagenta(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -1212,6 +1269,9 @@ Result<Bitmap, BitmapError> changeLuminanceMagenta(const Bitmap& bmp_tool_bitmap
 }
 
 Result<Bitmap, BitmapError> changeLuminanceYellow(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -1251,6 +1311,9 @@ Result<Bitmap, BitmapError> changeLuminanceYellow(const Bitmap& bmp_tool_bitmap,
 }
 
 Result<Bitmap, BitmapError> changeLuminanceCyan(const Bitmap& bmp_tool_bitmap, float luminance) {
+    if (!std::isfinite(luminance) || luminance < 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
     if (bmp_tool_bitmap.w == 0 || bmp_tool_bitmap.h == 0 || bmp_tool_bitmap.bpp != 32 ||
         bmp_tool_bitmap.data.size() < static_cast<size_t>(bmp_tool_bitmap.w) * bmp_tool_bitmap.h * 4) {
         return BitmapError::InvalidImageData;
@@ -1375,6 +1438,7 @@ Result<Bitmap, BitmapError> applyBoxBlur(const Bitmap& bmp_tool_bitmap, int blur
     if (blurRadius < 0) {
         return BitmapError::InvalidImageData; // blurRadius must be non-negative
     }
+    blurRadius = SafeMath::clamp(blurRadius, 0, SafeMath::MAX_SAFE_BLUR_RADIUS);
 
     Matrix::Matrix<::Pixel> image_matrix(bmp_tool_bitmap.h, bmp_tool_bitmap.w);
     for (uint32_t y = 0; y < bmp_tool_bitmap.h; ++y) {

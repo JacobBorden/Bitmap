@@ -23,7 +23,10 @@ enum class BitmapError {
     NotABmp,              ///< The file is not a BMP file (e.g., magic identifier is incorrect).
     UnknownError,         ///< An unspecified error occurred.
     PayloadTruncated,     ///< The pixel data buffer is truncated or smaller than expected.
-    UnsupportedCompression ///< The compression format is not supported (only uncompressed BI_RGB is supported).
+    UnsupportedCompression, ///< The compression format is not supported (only uncompressed BI_RGB is supported).
+    DimensionOverflow,    ///< Arithmetic overflow occurred while calculating image dimensions or offsets.
+    ExceedsMaxDimensions, ///< Image dimensions exceed MAX_SAFE_DIMENSION (65,536 pixels).
+    InvalidColorDepth     ///< Color depth is invalid or unsupported (only 24bpp and 32bpp supported).
 };
 
 /**

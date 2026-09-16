@@ -8,6 +8,13 @@ namespace BmpTool::SafeMath {
 
 constexpr uint32_t MAX_SAFE_DIMENSION = 65536;               // 64K max width/height
 constexpr size_t MAX_SAFE_IMAGE_BYTES = 512 * 1024 * 1024;    // 512 MB memory limit
+constexpr int MAX_SAFE_SCALE_FACTOR = 256;                   // Max scale factor for shrink/downscale
+constexpr int MAX_SAFE_BLUR_RADIUS = 64;                     // Max kernel blur radius to prevent CPU DOS
+
+template <typename T>
+inline T clamp(T val, T minVal, T maxVal) {
+    return (val < minVal) ? minVal : ((val > maxVal) ? maxVal : val);
+}
 
 /**
  * @brief Safely multiplies two uint32_t numbers, detecting overflow.

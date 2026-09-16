@@ -4,6 +4,7 @@
 #include <limits>
 #include <vector>
 #include <span>
+#include <cmath>
 #include "../src/safe_math.hpp"
 #include "../../include/bitmap.hpp"
 #include "../src/bitmapfile/bitmap_file.h"
@@ -165,7 +166,7 @@ TEST(SecurityTest, MaliciousBmpExcessiveDimensions) {
 
     auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
     EXPECT_TRUE(result.isError());
-    EXPECT_EQ(result.error(), BitmapError::InvalidImageHeader);
+    EXPECT_EQ(result.error(), BitmapError::ExceedsMaxDimensions);
 }
 
 TEST(SecurityTest, MaliciousBmpOffsetOverflow) {
@@ -354,5 +355,138 @@ TEST(SecurityTest, OffsetBitsSmallerThanHeaders) {
     auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
     EXPECT_TRUE(result.isError());
     EXPECT_EQ(result.error(), BitmapError::InvalidFileHeader);
+}
+
+TEST(SecurityTest, MaliciousBmpExcessiveHeight) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 400;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = sizeof(BITMAPINFOHEADER);
+    bih.biWidth = 10;
+    bih.biHeight = SafeMath::MAX_SAFE_DIMENSION + 1; // 64K + 1
+    bih.biPlanes = 1;
+    bih.biBitCount = 32;
+    bih.biCompression = 0;
+
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 400, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+
+    auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result.isError());
+    EXPECT_EQ(result.error(), BitmapError::ExceedsMaxDimensions);
+
+    // Negative excessive height (top-down)
+    bih.biHeight = -static_cast<int32_t>(SafeMath::MAX_SAFE_DIMENSION + 1);
+    std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+    auto result_neg = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+    EXPECT_TRUE(result_neg.isError());
+    EXPECT_EQ(result_neg.error(), BitmapError::ExceedsMaxDimensions);
+}
+
+TEST(SecurityTest, MaliciousBmpInvalidColorDepth) {
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 400;
+
+    BITMAPINFOHEADER bih = {};
+    bih.biSize = sizeof(BITMAPINFOHEADER);
+    bih.biWidth = 10;
+    bih.biHeight = 10;
+    bih.biPlanes = 1;
+    bih.biCompression = 0;
+
+    std::vector<uint8_t> buffer(sizeof(bfh) + sizeof(bih) + 400, 0);
+    std::memcpy(buffer.data(), &bfh, sizeof(bfh));
+
+    // Test unsupported bit depths: 1, 4, 8, 16, 48
+    uint16_t invalid_bpps[] = {1, 4, 8, 16, 48};
+    for (uint16_t bpp : invalid_bpps) {
+        bih.biBitCount = bpp;
+        std::memcpy(buffer.data() + sizeof(bfh), &bih, sizeof(bih));
+        auto result = load(std::span<const uint8_t>(buffer.data(), buffer.size()));
+        EXPECT_TRUE(result.isError());
+        EXPECT_EQ(result.error(), BitmapError::InvalidColorDepth);
+    }
+}
+
+TEST(SafeMathTest, ClampHelper) {
+    EXPECT_EQ(SafeMath::clamp(10, 0, 20), 10);
+    EXPECT_EQ(SafeMath::clamp(-5, 0, 20), 0);
+    EXPECT_EQ(SafeMath::clamp(25, 0, 20), 20);
+    EXPECT_EQ(SafeMath::clamp(100, 1, SafeMath::MAX_SAFE_SCALE_FACTOR), 100);
+    EXPECT_EQ(SafeMath::clamp(1000, 1, SafeMath::MAX_SAFE_SCALE_FACTOR), SafeMath::MAX_SAFE_SCALE_FACTOR);
+    EXPECT_EQ(SafeMath::clamp(0, 1, SafeMath::MAX_SAFE_SCALE_FACTOR), 1);
+    EXPECT_EQ(SafeMath::clamp(100, 0, SafeMath::MAX_SAFE_BLUR_RADIUS), SafeMath::MAX_SAFE_BLUR_RADIUS);
+}
+
+TEST(SecurityTest, DefensiveParameterClampingBoxBlur) {
+    BmpTool::Bitmap test_bmp;
+    test_bmp.w = 4;
+    test_bmp.h = 4;
+    test_bmp.bpp = 32;
+    test_bmp.data.assign(4 * 4 * 4, 128);
+
+    // Extreme blur radius should be safely clamped to MAX_SAFE_BLUR_RADIUS without hanging or crashing
+    auto result = applyBoxBlur(test_bmp, 10000);
+    EXPECT_TRUE(result.isSuccess());
+    EXPECT_EQ(result.value().w, 4u);
+    EXPECT_EQ(result.value().h, 4u);
+}
+
+TEST(SecurityTest, DefensiveParameterClampingShrink) {
+    BmpTool::Bitmap test_bmp;
+    test_bmp.w = 512;
+    test_bmp.h = 512;
+    test_bmp.bpp = 32;
+    test_bmp.data.assign(512 * 512 * 4, 128);
+
+    // Scale factor 5000 is clamped to MAX_SAFE_SCALE_FACTOR (256).
+    // Resulting dimensions: 512 / 256 = 2.
+    auto result = shrink(test_bmp, 5000);
+    EXPECT_TRUE(result.isSuccess());
+    EXPECT_EQ(result.value().w, 2u);
+    EXPECT_EQ(result.value().h, 2u);
+}
+
+TEST(SecurityTest, NonFiniteFloatRejection) {
+    BmpTool::Bitmap test_bmp;
+    test_bmp.w = 2;
+    test_bmp.h = 2;
+    test_bmp.bpp = 32;
+    test_bmp.data.assign(2 * 2 * 4, 100);
+
+    const float nan_val = std::numeric_limits<float>::quiet_NaN();
+    const float inf_val = std::numeric_limits<float>::infinity();
+    const float neg_val = -0.5f;
+
+    // Brightness
+    EXPECT_TRUE(changeBrightness(test_bmp, nan_val).isError());
+    EXPECT_EQ(changeBrightness(test_bmp, nan_val).error(), BitmapError::InvalidImageData);
+    EXPECT_TRUE(changeBrightness(test_bmp, inf_val).isError());
+    EXPECT_EQ(changeBrightness(test_bmp, inf_val).error(), BitmapError::InvalidImageData);
+    EXPECT_TRUE(changeBrightness(test_bmp, neg_val).isError());
+    EXPECT_EQ(changeBrightness(test_bmp, neg_val).error(), BitmapError::InvalidImageData);
+
+    // Contrast
+    EXPECT_TRUE(changeContrast(test_bmp, nan_val).isError());
+    EXPECT_EQ(changeContrast(test_bmp, nan_val).error(), BitmapError::InvalidImageData);
+    EXPECT_TRUE(changeContrast(test_bmp, inf_val).isError());
+    EXPECT_TRUE(changeContrast(test_bmp, neg_val).isError());
+
+    // Saturation
+    EXPECT_TRUE(changeSaturation(test_bmp, nan_val).isError());
+    EXPECT_EQ(changeSaturation(test_bmp, nan_val).error(), BitmapError::InvalidImageData);
+    EXPECT_TRUE(changeSaturation(test_bmp, inf_val).isError());
+    EXPECT_TRUE(changeSaturation(test_bmp, neg_val).isError());
+
+    // Luminance variants
+    EXPECT_TRUE(changeLuminanceBlue(test_bmp, nan_val).isError());
+    EXPECT_TRUE(changeLuminanceBlue(test_bmp, inf_val).isError());
+    EXPECT_TRUE(changeLuminanceBlue(test_bmp, neg_val).isError());
 }
 
