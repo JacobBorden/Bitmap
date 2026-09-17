@@ -10,6 +10,8 @@ include(Fuzzing) # Requires Fuzzing.cmake from https://github.com/google/oss-fuz
 # List of fuzz targets
 set(FUZZ_TARGETS
     fuzz_bitmap
+    fuzz_corrupt_headers
+    fuzz_random_truncation
     fuzz_bitmap_file
     fuzz_bmp_tool_save
     fuzz_convert_bgr_to_bgra
@@ -17,7 +19,7 @@ set(FUZZ_TARGETS
     fuzz_matrix
     fuzz_swizzle_bgra_to_rgba
     fuzz_swizzle_rgba_to_bgra
-    fuzz_bmptool_api_manipulations # New fuzz target
+    fuzz_bmptool_api_manipulations
 )
 
 foreach(TARGET ${FUZZ_TARGETS})

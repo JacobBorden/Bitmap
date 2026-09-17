@@ -9,8 +9,9 @@ set(TEST_SOURCES
     test_bitmap.cpp
     test_bitmap_file.cpp
     test_matrix.cpp
-    test_swizzle.cpp # <-- Add this line
+    test_swizzle.cpp
     test_safe_math.cpp
+    test_fuzz_regressions.cpp
     tests_main.cpp
     api_roundtrip.cpp
 )
@@ -38,6 +39,24 @@ if(ENABLE_FUZZING AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_link_libraries(fuzz_bitmap PRIVATE bitmap)
   set_target_properties(fuzz_bitmap PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
   message(STATUS "Fuzz target fuzz_bitmap (updated flags) added.")
+
+  # Corrupt headers fuzzer
+  add_executable(fuzz_corrupt_headers fuzz/fuzz_corrupt_headers.cpp)
+  target_link_libraries(fuzz_corrupt_headers PRIVATE bitmap)
+  set_target_properties(fuzz_corrupt_headers PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_corrupt_headers added.")
+
+  # Random truncation fuzzer
+  add_executable(fuzz_random_truncation fuzz/fuzz_random_truncation.cpp)
+  target_link_libraries(fuzz_random_truncation PRIVATE bitmap)
+  set_target_properties(fuzz_random_truncation PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_random_truncation added.")
+
+  # API manipulations fuzzer
+  add_executable(fuzz_bmptool_api_manipulations fuzz/fuzz_bmptool_api_manipulations.cpp)
+  target_link_libraries(fuzz_bmptool_api_manipulations PRIVATE bitmap)
+  set_target_properties(fuzz_bmptool_api_manipulations PROPERTIES LINK_FLAGS "${FUZZ_LINK_FLAGS}")
+  message(STATUS "Fuzz target fuzz_bmptool_api_manipulations added.")
 
   # New fuzzer for BmpTool::save
   add_executable(fuzz_bmp_tool_save fuzz/fuzz_bmp_tool_save.cpp)

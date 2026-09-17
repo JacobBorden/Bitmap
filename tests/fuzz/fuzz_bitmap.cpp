@@ -4,20 +4,22 @@
 #include <span>   // For std::span
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
-    // We are specifically testing 54-byte headers.
-    // The fuzzer might provide smaller or larger inputs.
-    // We truncate or ignore inputs not of this size to focus the fuzzing.
-    if (Size < 54) {
-        return 0; // Not enough data for a 54-byte header.
+    // Pass arbitrary length memory span to BmpTool::load.
+    // Handles 0 bytes, partial headers (<54), valid headers, and arbitrary payloads.
+    std::span<const uint8_t> bmp_data(Data, Size);
+    auto result = BmpTool::load(bmp_data);
+
+    // If parsing succeeds, verify basic invariants to catch logic errors
+    if (result.isSuccess()) {
+        const auto& bmp = result.value();
+        if (bmp.w > 0 && bmp.h > 0) {
+            // Buffer size should match computed dimensions
+            size_t bytes_per_pixel = bmp.bpp / 8;
+            if (bmp.data.size() != static_cast<size_t>(bmp.w) * bmp.h * bytes_per_pixel) {
+                return -1;
+            }
+        }
     }
-
-    // Create a span for the 54-byte header.
-    std::span<const uint8_t> bmp_data(Data, 54);
-
-    // Call the function to be fuzzed.
-    // We don't need to check the result for fuzzing purposes,
-    // as ASan/libFuzzer will report crashes or memory errors.
-    [[maybe_unused]] auto result = BmpTool::load(bmp_data);
 
     return 0; // Essential for libFuzzer to continue.
 }
