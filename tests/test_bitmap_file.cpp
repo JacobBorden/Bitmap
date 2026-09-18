@@ -11,30 +11,29 @@ bool CreateMinimalValidBmp(const std::string& filepath, int width, int height, u
         return false;
     }
 
-    BITMAPFILEHEADER bfh; // Removed Bitmap::
-    BITMAPINFOHEADER bih; // Removed Bitmap::
+    BITMAPFILEHEADER bfh{};
+    BITMAPINFOHEADER bih{};
 
-    int imageRowSize = ((width * bih.biBitCount + 31) / 32) * 4; // Row size must be a multiple of 4 bytes
-    int imageSize = imageRowSize * height;
-
-
-    bfh.bfType = 0x4D42; // 'BM'
-    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + imageSize; // Removed Bitmap::
-    bfh.bfReserved1 = 0;
-    bfh.bfReserved2 = 0;
-    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER); // Removed Bitmap::
-
-    bih.biSize = sizeof(BITMAPINFOHEADER); // Removed Bitmap::
+    bih.biSize = sizeof(BITMAPINFOHEADER);
     bih.biWidth = width;
     bih.biHeight = height;
     bih.biPlanes = 1;
     bih.biBitCount = 24; // 24 bits per pixel
     bih.biCompression = 0; // BI_RGB (no compression)
-    bih.biSizeImage = imageSize; 
     bih.biXPelsPerMeter = 0; // Typically 0
     bih.biYPelsPerMeter = 0; // Typically 0
     bih.biClrUsed = 0;       // Not using a color palette
     bih.biClrImportant = 0;  // All colors are important
+
+    int imageRowSize = ((width * bih.biBitCount + 31) / 32) * 4; // Row size must be a multiple of 4 bytes
+    int imageSize = imageRowSize * height;
+    bih.biSizeImage = imageSize;
+
+    bfh.bfType = 0x4D42; // 'BM'
+    bfh.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + imageSize;
+    bfh.bfReserved1 = 0;
+    bfh.bfReserved2 = 0;
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
 
     file.write(reinterpret_cast<const char*>(&bfh), sizeof(bfh));
     file.write(reinterpret_cast<const char*>(&bih), sizeof(bih));

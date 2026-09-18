@@ -47,8 +47,8 @@ namespace Bitmap
     class File
     {
     public:
-        BITMAPINFOHEADER bitmapInfoHeader; // Replaced BITMAPINFO
-        BITMAPFILEHEADER bitmapFileHeader;
+        BITMAPINFOHEADER bitmapInfoHeader{}; // Replaced BITMAPINFO
+        BITMAPFILEHEADER bitmapFileHeader{};
         std::vector<uint8_t> bitmapData; // Changed BYTE to uint8_t
 
         File();
