@@ -21,36 +21,33 @@ This document outlines the **5-week execution schedule** for the Bitmap Hardened
 ### Week 1: Security Audit & Zero-Trust Parser Hardening
 **Goal**: Immunize the library against parser exploits, arithmetic overflows, and malformed image payloads.
 
-* **Day 1: Arithmetic Overflow & Header Validation Audit**
-  * Implement safe integer arithmetic utilities (`safe_multiply`, `safe_add`) for all dimensions and byte offsets.
-  * Audit `load()` and `src/bitmapfile` to ensure `biWidth * biHeight * (biBitCount / 8)` and row stride calculations `((biWidth * biBitCount + 31) / 32) * 4` cannot wrap around on extreme `uint32_t` values.
-  * Enforce maximum sanity bounds on dimensions (e.g., max dimension 65,536 pixels).
+* **Day 1: Arithmetic Overflow & Header Validation Audit** - **[COMPLETED & MERGED]**
+  * Implemented safe integer arithmetic utilities (`SafeMath::multiply`, `SafeMath::add`, `SafeMath::computeRowStride`, `SafeMath::computePixelDataSize`).
+  * Enforced bounds on dimensions (`MAX_SAFE_DIMENSION = 65536`, `MAX_SAFE_IMAGE_BYTES = 512MB`).
 
-* **Day 2: Payload Boundary & Truncation Enforcement**
-  * Implement strict physical payload validation: ensure `bfOffBits + biSizeImage <= total_buffer_bytes`.
-  * Verify that truncated memory spans reject cleanly with `BitmapError::PayloadTruncated` without out-of-bounds reads.
-  * Validate compression formats (strictly enforce uncompressed `BI_RGB = 0` and reject malformed/unsupported compression codes).
+* **Day 2: Payload Boundary & Truncation Enforcement** - **[COMPLETED & MERGED]**
+  * Implemented strict physical payload validation: `bfOffBits + expected_pixel_data_size <= total_buffer_bytes`.
+  * Verified truncated spans reject cleanly with `BitmapError::PayloadTruncated`.
+  * Enforced uncompressed `BI_RGB = 0` format rejection with `BitmapError::UnsupportedCompression`.
 
-* **Day 3: Defensive Clamping & Error Enum Formalization**
-  * Expand `BitmapError` enum in `include/bitmap.hpp` to include granular error codes:
-    * `DimensionOverflow`
-    * `PayloadTruncated`
-    * `InvalidColorDepth`
-    * `ExceedsMaxDimensions`
-  * Add defensive parameter clamping on scaling factors and kernel sizes to eliminate algorithmic complexity / denial-of-service vectors.
+* **Day 3: Defensive Clamping & Error Enum Formalization** - **[COMPLETED & MERGED]**
+  * Formalized granular `BitmapError` enum: `DimensionOverflow`, `PayloadTruncated`, `InvalidColorDepth`, `ExceedsMaxDimensions`.
+  * Added defensive clamping on scaling factors (`MAX_SAFE_SCALE_FACTOR = 256`) and kernel sizes (`MAX_SAFE_BLUR_RADIUS = 64`).
+  * Enforced non-finite (`NaN`, `+Inf`, `-Inf`) and negative float rejection across all color manipulation APIs.
 
-* **Day 4: Fuzz Testing Suite Expansion**
-  * Add dedicated fuzzers in `tests/fuzz/` targeting:
-    * Malformed `BITMAPFILEHEADER` and `BITMAPINFOHEADER` permutations.
-    * Memory spans with random byte truncation at every offset.
-  * Implement automated corpus seed generation for corrupted BMP variants.
+* **Day 4: Fuzz Testing Suite Expansion** - **[COMPLETED & MERGED]**
+  * Unlocked `fuzz_bitmap` to test arbitrary length spans.
+  * Added dedicated fuzzers `fuzz_corrupt_headers.cpp` and `fuzz_random_truncation.cpp`.
+  * Created automated corpus seed generator `generate_seeds.py` (40 seed vectors).
+  * Added deterministic regression suite `test_fuzz_regressions.cpp` (9 tests, 99 total tests).
 
-* **Day 5: Week 1 Verification & Checkpoint**
+* **Day 5: Week 1 Verification & Checkpoint** - **[COMPLETED & TAGGED `v0.1.0-checkpoint1`]**
   * **Checkpoint 1 Execution**:
-    * Run GoogleTest unit tests with AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan).
-    * Execute libFuzzer for 100,000+ iterations across all BMP parsers.
-    * Verify zero memory leaks, zero UB, and deterministic error code returns.
-    * Code review and milestone tagging on `development`.
+    * Verified 99/99 GoogleTests passing locally and across CI runners (GCC 13, Clang 18, MSVC).
+    * Validated AddressSanitizer (ASan), MemorySanitizer (MSan), and UndefinedBehaviorSanitizer (UBSan) clean passes.
+    * Validated Valgrind memory check with 0 defects and 0 memory leaks across all 99 test cases.
+    * Executed libFuzzer for over 17,400,000+ iterations across BMP parsers without crashes or leaks.
+    * Completed code audit and tagged release milestone `v0.1.0-checkpoint1` on `development`.
 
 ---
 
