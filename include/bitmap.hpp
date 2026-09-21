@@ -405,4 +405,22 @@ Result<Bitmap, BitmapError> applySepiaTone(const Bitmap& bitmap);
  */
 Result<Bitmap, BitmapError> applyBoxBlur(const Bitmap& bitmap, int blurRadius = 1);
 
+/**
+ * @brief Reduces the color bit-depth of image channels (Feature Squeezing).
+ *
+ * Quantizes 8-bit channel values to discrete 2^b levels and maps them back
+ * to [0, 255] using uniform quantization:
+ *   x' = round( round(x * (2^b - 1) / 255) * 255 / (2^b - 1) )
+ *
+ * This operation destroys low-amplitude adversarial micro-perturbations
+ * (e.g., Fast Gradient Sign Method [FGSM], Projected Gradient Descent [PGD])
+ * before passing images to neural network inference.
+ *
+ * @param bitmap The input bitmap (24bpp or 32bpp).
+ * @param bitsPerChannel Target bit depth per channel, must be in [1, 8].
+ * @param quantizeAlpha If true, also quantizes the alpha channel; defaults to false (preserving opacity).
+ * @return Result containing the quantized bitmap or an error (e.g. InvalidColorDepth if bitsPerChannel not in [1, 8]).
+ */
+Result<Bitmap, BitmapError> quantizeChannels(const Bitmap& bitmap, uint8_t bitsPerChannel, bool quantizeAlpha = false);
+
 } // namespace BmpTool

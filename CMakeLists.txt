@@ -52,6 +52,7 @@ target_include_directories(bitmap PUBLIC
 )
 
 # GoogleTest
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 include(FetchContent)
 FetchContent_Declare(
   googletest

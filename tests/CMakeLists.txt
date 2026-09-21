@@ -12,6 +12,7 @@ set(TEST_SOURCES
     test_swizzle.cpp
     test_safe_math.cpp
     test_fuzz_regressions.cpp
+    test_adversarial_filters.cpp
     tests_main.cpp
     api_roundtrip.cpp
 )

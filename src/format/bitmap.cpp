@@ -1473,4 +1473,85 @@ Result<Bitmap, BitmapError> applyBoxBlur(const Bitmap& bmp_tool_bitmap, int blur
     return final_bmp_tool_bitmap;
 }
 
+Result<Bitmap, BitmapError> quantizeChannels(const Bitmap& bitmap, uint8_t bitsPerChannel, bool quantizeAlpha) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+    if (bitsPerChannel < 1 || bitsPerChannel > 8) {
+        return BitmapError::InvalidColorDepth;
+    }
+
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t expected_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, bytes_per_pixel, expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < expected_data_size) {
+        return BitmapError::InvalidImageData;
+    }
+
+    // Identity fast-path for 8-bit depth
+    if (bitsPerChannel == 8) {
+        return bitmap;
+    }
+
+    // Precompute 256-byte lookup table for the target bit depth
+    // Mathematical feature squeezing formula:
+    //   norm = v / 255.0
+    //   level = round(norm * (2^b - 1))
+    //   reconstructed = round((level / (2^b - 1)) * 255.0)
+    uint8_t lut[256];
+    const float max_level = static_cast<float>((1 << bitsPerChannel) - 1);
+    for (uint32_t v = 0; v < 256; ++v) {
+        float norm = static_cast<float>(v) / 255.0f;
+        float quantized_level = std::round(norm * max_level);
+        float reconstructed = std::round((quantized_level / max_level) * 255.0f);
+        lut[v] = static_cast<uint8_t>(SafeMath::clamp(reconstructed, 0.0f, 255.0f));
+    }
+
+    Bitmap out = bitmap;
+    out.data.resize(expected_data_size);
+
+    if (bitmap.bpp == 32) {
+        uint8_t* ptr = out.data.data();
+        if (quantizeAlpha) {
+            for (size_t i = 0; i < total_pixels; ++i) {
+                ptr[0] = lut[ptr[0]]; // R
+                ptr[1] = lut[ptr[1]]; // G
+                ptr[2] = lut[ptr[2]]; // B
+                ptr[3] = lut[ptr[3]]; // A
+                ptr += 4;
+            }
+        } else {
+            for (size_t i = 0; i < total_pixels; ++i) {
+                ptr[0] = lut[ptr[0]]; // R
+                ptr[1] = lut[ptr[1]]; // G
+                ptr[2] = lut[ptr[2]]; // B
+                // Alpha (ptr[3]) preserved unchanged
+                ptr += 4;
+            }
+        }
+    } else if (bitmap.bpp == 24) {
+        uint8_t* ptr = out.data.data();
+        for (size_t i = 0; i < total_pixels; ++i) {
+            ptr[0] = lut[ptr[0]]; // R
+            ptr[1] = lut[ptr[1]]; // G
+            ptr[2] = lut[ptr[2]]; // B
+            ptr += 3;
+        }
+    }
+
+    return out;
+}
+
 } // namespace BmpTool
