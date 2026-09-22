@@ -188,6 +188,65 @@ Bitmap::File ApplyBoxBlur(Bitmap::File bitmapFile, int blurRadius)
     return CreateBitmapFromMatrix(blurredMatrix);
 }
 
+// Applies a non-linear median filter to the image with a given kernel size (3 or 5).
+// Each pixel's new channel value is the median of its neighbors within a square kernel.
+Bitmap::File ApplyMedianFilter(Bitmap::File bitmapFile, int kernelSize)
+{
+    if (kernelSize != 3 && kernelSize != 5) {
+        // Only 3x3 and 5x5 median filters are supported; return original image on invalid size.
+        return bitmapFile;
+    }
+
+    Matrix::Matrix<Pixel> originalMatrix = CreateMatrixFromBitmap(bitmapFile);
+    if (originalMatrix.rows() == 0 || originalMatrix.cols() == 0) {
+        return bitmapFile;
+    }
+
+    Matrix::Matrix<Pixel> filteredMatrix(originalMatrix.rows(), originalMatrix.cols());
+    const int radius = kernelSize / 2;
+    const int numNeighbors = kernelSize * kernelSize;
+    const int medianIndex = numNeighbors / 2;
+
+    uint8_t rBuf[25];
+    uint8_t gBuf[25];
+    uint8_t bBuf[25];
+    uint8_t aBuf[25];
+
+    for (int r = 0; r < static_cast<int>(originalMatrix.rows()); ++r)
+    {
+        for (int c = 0; c < static_cast<int>(originalMatrix.cols()); ++c)
+        {
+            int idx = 0;
+            for (int dr = -radius; dr <= radius; ++dr)
+            {
+                int sample_r = std::clamp(r + dr, 0, static_cast<int>(originalMatrix.rows()) - 1);
+                for (int dc = -radius; dc <= radius; ++dc)
+                {
+                    int sample_c = std::clamp(c + dc, 0, static_cast<int>(originalMatrix.cols()) - 1);
+                    const Pixel& p = originalMatrix[sample_r][sample_c];
+                    rBuf[idx] = p.red;
+                    gBuf[idx] = p.green;
+                    bBuf[idx] = p.blue;
+                    aBuf[idx] = p.alpha;
+                    idx++;
+                }
+            }
+
+            std::nth_element(rBuf, rBuf + medianIndex, rBuf + numNeighbors);
+            std::nth_element(gBuf, gBuf + medianIndex, gBuf + numNeighbors);
+            std::nth_element(bBuf, bBuf + medianIndex, bBuf + numNeighbors);
+            std::nth_element(aBuf, aBuf + medianIndex, aBuf + numNeighbors);
+
+            filteredMatrix[r][c].red = rBuf[medianIndex];
+            filteredMatrix[r][c].green = gBuf[medianIndex];
+            filteredMatrix[r][c].blue = bBuf[medianIndex];
+            filteredMatrix[r][c].alpha = aBuf[medianIndex];
+        }
+    }
+    return CreateBitmapFromMatrix(filteredMatrix);
+}
+
+
 // Helper function for BGR to BGRA conversion with SIMD (declaration in bitmap.h)
 void internal_convert_bgr_to_bgra_simd(const uint8_t* src_row_bgr_ptr, ::Pixel* dest_row_pixel_ptr, size_t num_pixels_in_row) {
     size_t current_src_byte_offset = 0;

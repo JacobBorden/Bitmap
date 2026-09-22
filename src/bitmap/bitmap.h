@@ -406,6 +406,15 @@ Bitmap::File ApplySepiaTone(Bitmap::File bitmapFile);
 //   A new Bitmap::File object with the box blur applied.
 Bitmap::File ApplyBoxBlur(Bitmap::File bitmapFile, int blurRadius = 1);
 
+// Applies a non-linear median filter to the image with a given kernel size (3 or 5).
+// Parameters:
+//   bitmapFile: The image to filter.
+//   kernelSize: The size of the kernel (3 for 3x3, 5 for 5x5). Defaults to 3.
+// Returns:
+//   A new Bitmap::File object with the median filter applied.
+Bitmap::File ApplyMedianFilter(Bitmap::File bitmapFile, int kernelSize = 3);
+
+
 // ---- New pixel manipulation functions (helpers for the above) ----
 
 // Inverts the color of a single pixel (Red, Green, Blue channels). Alpha is unchanged.

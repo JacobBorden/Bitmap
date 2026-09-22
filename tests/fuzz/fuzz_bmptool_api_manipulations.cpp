@@ -95,8 +95,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     uint8_t operation_choice = Consume<uint8_t>(&current_data_ptr, &current_size_ptr);
     BmpTool::Result<BmpTool::Bitmap, BmpTool::BitmapError> result(BmpTool::BitmapError::UnknownError);
 
-    // Ensure parameters for operations are also consumed from the remaining data
-    switch (operation_choice % 25) {
+    switch (operation_choice % 26) {
         case 0: result = BmpTool::shrink(src_bmp, ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 8)); break;
         case 1: result = BmpTool::rotateCounterClockwise(src_bmp); break;
         case 2: result = BmpTool::rotateClockwise(src_bmp); break;
@@ -122,10 +121,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
         case 22: result = BmpTool::applySepiaTone(src_bmp); break;
         case 23: result = BmpTool::applyBoxBlur(src_bmp, ConsumeInt(&current_data_ptr, &current_size_ptr, 0, 3)); break;
         case 24: result = BmpTool::quantizeChannels(src_bmp, Consume<uint8_t>(&current_data_ptr, &current_size_ptr) % 10, (Consume<uint8_t>(&current_data_ptr, &current_size_ptr) % 2) != 0); break;
+        case 25: result = BmpTool::medianFilter(src_bmp, ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 6), (Consume<uint8_t>(&current_data_ptr, &current_size_ptr) % 2) != 0); break;
         default:
             result = BmpTool::greyscale(src_bmp);
             break;
     }
+
 
     // Process the result to ensure it's valid or handle errors gracefully.
     // This helps catch issues where operations might produce invalid Bitmap objects

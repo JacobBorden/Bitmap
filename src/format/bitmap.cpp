@@ -1554,4 +1554,152 @@ Result<Bitmap, BitmapError> quantizeChannels(const Bitmap& bitmap, uint8_t bitsP
     return out;
 }
 
+namespace {
+
+inline void sort2_median(uint8_t& a, uint8_t& b) {
+    if (a > b) {
+        uint8_t tmp = a;
+        a = b;
+        b = tmp;
+    }
+}
+
+// 9-element median calculation via branchless sorting network + clamp.
+// 19 comparators sort a[0..7], then 2 comparators find the median with a[8].
+inline uint8_t computeMedian9(uint8_t* a) {
+    // Sort 0..3 (5 comparators)
+    sort2_median(a[0], a[1]); sort2_median(a[2], a[3]);
+    sort2_median(a[0], a[2]); sort2_median(a[1], a[3]);
+    sort2_median(a[1], a[2]);
+
+    // Sort 4..7 (5 comparators)
+    sort2_median(a[4], a[5]); sort2_median(a[6], a[7]);
+    sort2_median(a[4], a[6]); sort2_median(a[5], a[7]);
+    sort2_median(a[5], a[6]);
+
+    // Odd-even merge of sorted 0..3 and sorted 4..7 (9 comparators)
+    sort2_median(a[0], a[4]); sort2_median(a[1], a[5]); sort2_median(a[2], a[6]); sort2_median(a[3], a[7]);
+    sort2_median(a[2], a[4]); sort2_median(a[3], a[5]);
+    sort2_median(a[1], a[2]); sort2_median(a[3], a[4]); sort2_median(a[5], a[6]);
+
+    // Now a[0..7] is completely sorted.
+    // The median of 9 elements {a[0..7], a[8]} is clamp(a[8], a[3], a[4]):
+    return std::clamp(a[8], a[3], a[4]);
+}
+
+inline uint8_t computeMedian25(uint8_t* a) {
+    std::nth_element(a, a + 12, a + 25);
+    return a[12];
+}
+
+} // anonymous namespace
+
+Result<Bitmap, BitmapError> medianFilter(const Bitmap& bitmap, uint32_t kernelSize, bool preserveAlpha) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+    if (kernelSize != 3 && kernelSize != 5) {
+        return BitmapError::InvalidImageData;
+    }
+
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t expected_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, bytes_per_pixel, expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < expected_data_size) {
+        return BitmapError::InvalidImageData;
+    }
+
+    Bitmap out = bitmap;
+    out.data.resize(expected_data_size);
+
+    const uint8_t* src = bitmap.data.data();
+    uint8_t* dst = out.data.data();
+    const bool has_alpha = (bitmap.bpp == 32);
+
+    if (kernelSize == 3) {
+        uint8_t rBuf[9];
+        uint8_t gBuf[9];
+        uint8_t bBuf[9];
+        uint8_t aBuf[9];
+
+        for (uint32_t y = 0; y < bitmap.h; ++y) {
+            for (uint32_t x = 0; x < bitmap.w; ++x) {
+                int idx = 0;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    int sy = std::clamp(static_cast<int>(y) + dy, 0, static_cast<int>(bitmap.h) - 1);
+                    const size_t row_offset = static_cast<size_t>(sy) * bitmap.w * bytes_per_pixel;
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int sx = std::clamp(static_cast<int>(x) + dx, 0, static_cast<int>(bitmap.w) - 1);
+                        const size_t pixel_offset = row_offset + static_cast<size_t>(sx) * bytes_per_pixel;
+                        rBuf[idx] = src[pixel_offset];
+                        gBuf[idx] = src[pixel_offset + 1];
+                        bBuf[idx] = src[pixel_offset + 2];
+                        if (has_alpha && !preserveAlpha) {
+                            aBuf[idx] = src[pixel_offset + 3];
+                        }
+                        idx++;
+                    }
+                }
+
+                const size_t dst_offset = (static_cast<size_t>(y) * bitmap.w + x) * bytes_per_pixel;
+                dst[dst_offset]     = computeMedian9(rBuf);
+                dst[dst_offset + 1] = computeMedian9(gBuf);
+                dst[dst_offset + 2] = computeMedian9(bBuf);
+                if (has_alpha) {
+                    dst[dst_offset + 3] = preserveAlpha ? src[dst_offset + 3] : computeMedian9(aBuf);
+                }
+            }
+        }
+    } else { // kernelSize == 5
+        uint8_t rBuf[25];
+        uint8_t gBuf[25];
+        uint8_t bBuf[25];
+        uint8_t aBuf[25];
+
+        for (uint32_t y = 0; y < bitmap.h; ++y) {
+            for (uint32_t x = 0; x < bitmap.w; ++x) {
+                int idx = 0;
+                for (int dy = -2; dy <= 2; ++dy) {
+                    int sy = std::clamp(static_cast<int>(y) + dy, 0, static_cast<int>(bitmap.h) - 1);
+                    const size_t row_offset = static_cast<size_t>(sy) * bitmap.w * bytes_per_pixel;
+                    for (int dx = -2; dx <= 2; ++dx) {
+                        int sx = std::clamp(static_cast<int>(x) + dx, 0, static_cast<int>(bitmap.w) - 1);
+                        const size_t pixel_offset = row_offset + static_cast<size_t>(sx) * bytes_per_pixel;
+                        rBuf[idx] = src[pixel_offset];
+                        gBuf[idx] = src[pixel_offset + 1];
+                        bBuf[idx] = src[pixel_offset + 2];
+                        if (has_alpha && !preserveAlpha) {
+                            aBuf[idx] = src[pixel_offset + 3];
+                        }
+                        idx++;
+                    }
+                }
+
+                const size_t dst_offset = (static_cast<size_t>(y) * bitmap.w + x) * bytes_per_pixel;
+                dst[dst_offset]     = computeMedian25(rBuf);
+                dst[dst_offset + 1] = computeMedian25(gBuf);
+                dst[dst_offset + 2] = computeMedian25(bBuf);
+                if (has_alpha) {
+                    dst[dst_offset + 3] = preserveAlpha ? src[dst_offset + 3] : computeMedian25(aBuf);
+                }
+            }
+        }
+    }
+
+    return out;
+}
+
 } // namespace BmpTool
+

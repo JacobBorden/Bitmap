@@ -129,6 +129,40 @@ TEST(BitmapTest, ApplyBoxBlur_RadiusZero) {
     EXPECT_EQ(pattern_matrix[1][1], not_blurred_matrix[1][1]);
 }
 
+TEST(BitmapTest, ApplyMedianFilter_ImpulseRemoval) {
+    Matrix::Matrix<Pixel> pattern_matrix(3, 3);
+    Pixel black_pixel = {0, 0, 0, 255};
+    Pixel white_pixel = {255, 255, 255, 255};
+    for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) pattern_matrix[i][j] = black_pixel;
+    pattern_matrix[1][1] = white_pixel;
+    Bitmap::File pattern_bmp = CreateTestBitmap(pattern_matrix);
+    ASSERT_TRUE(pattern_bmp.IsValid());
+
+    Bitmap::File filtered_bmp = ApplyMedianFilter(pattern_bmp, 3);
+    ASSERT_TRUE(filtered_bmp.IsValid());
+    Matrix::Matrix<Pixel> filtered_matrix = CreateMatrixFromBitmap(filtered_bmp);
+    ASSERT_EQ(filtered_matrix.rows(), 3);
+    ASSERT_EQ(filtered_matrix.cols(), 3);
+
+    // Median of eight 0s and one 255 is 0; the single white impulse pixel is removed!
+    EXPECT_EQ(black_pixel, filtered_matrix[1][1]);
+}
+
+TEST(BitmapTest, ApplyMedianFilter_InvalidKernel) {
+    Matrix::Matrix<Pixel> pattern_matrix(3, 3);
+    Pixel red_pixel = {0, 0, 255, 255};
+    for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) pattern_matrix[i][j] = red_pixel;
+    Bitmap::File bmp = CreateTestBitmap(pattern_matrix);
+    ASSERT_TRUE(bmp.IsValid());
+
+    // Invalid kernel sizes return the image unchanged
+    Bitmap::File res2 = ApplyMedianFilter(bmp, 2);
+    ASSERT_TRUE(res2.IsValid());
+    Bitmap::File res4 = ApplyMedianFilter(bmp, 4);
+    ASSERT_TRUE(res4.IsValid());
+}
+
+
 TEST(BitmapTest, ShrinkImage) {
     Matrix::Matrix<Pixel> large_matrix(4, 4); // 4x4 image
     for (int i = 0; i < 4; ++i) for (int j = 0; j < 4; ++j) large_matrix[i][j] = {(BYTE)(i*10), (BYTE)(j*10), (BYTE)((i+j)*10), 255};

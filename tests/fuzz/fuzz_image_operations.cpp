@@ -84,7 +84,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
     Bitmap::File result_bmp_file; 
     
-    switch (operation_choice % 24) { 
+    switch (operation_choice % 25) { 
         case 0: result_bmp_file = ShrinkImage(bmp_file, ConsumeInt(&Data, &Size, 1, 8)); break;
         case 1: result_bmp_file = RotateImageCounterClockwise(bmp_file); break;
         case 2: result_bmp_file = RotateImageClockwise(bmp_file); break;
@@ -109,7 +109,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
         case 21: result_bmp_file = InvertImageColors(bmp_file); break;
         case 22: result_bmp_file = ApplySepiaTone(bmp_file); break;
         case 23: result_bmp_file = ApplyBoxBlur(bmp_file, ConsumeInt(&Data, &Size, 0, 3)); break; 
+        case 24: result_bmp_file = ApplyMedianFilter(bmp_file, ConsumeInt(&Data, &Size, 1, 6)); break;
     }
+
     
     return 0;
 }

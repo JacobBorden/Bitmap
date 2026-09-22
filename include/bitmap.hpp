@@ -423,4 +423,21 @@ Result<Bitmap, BitmapError> applyBoxBlur(const Bitmap& bitmap, int blurRadius = 
  */
 Result<Bitmap, BitmapError> quantizeChannels(const Bitmap& bitmap, uint8_t bitsPerChannel, bool quantizeAlpha = false);
 
+/**
+ * @brief Applies a non-linear median filter to the image for impulse and adversarial noise removal.
+ *
+ * Replaces each pixel's color channel with the median value of its neighboring pixels
+ * within a square kernel (3x3 or 5x5). Eliminates single-pixel adversarial attacks,
+ * salt-and-pepper noise, and extreme high-frequency spikes while preserving sharp edges.
+ *
+ * Edge boundaries are handled using border clamping (replicate edge pixels).
+ *
+ * @param bitmap The input bitmap (24bpp or 32bpp).
+ * @param kernelSize The kernel dimension, must be 3 (3x3) or 5 (5x5). Defaults to 3.
+ * @param preserveAlpha If true, preserves the alpha channel untouched (for 32bpp); defaults to true.
+ * @return Result containing the filtered bitmap or an error (e.g. InvalidImageData if kernelSize != 3 and kernelSize != 5).
+ */
+Result<Bitmap, BitmapError> medianFilter(const Bitmap& bitmap, uint32_t kernelSize = 3, bool preserveAlpha = true);
+
 } // namespace BmpTool
+
