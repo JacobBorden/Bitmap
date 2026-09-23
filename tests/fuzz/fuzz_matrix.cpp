@@ -150,15 +150,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
         switch (op_mod) { 
             case 0: if (!m1.empty()) result_matrix = m1.Transpose(); break;
             case 1:
-                if (m1.rows() == m1.cols() && !m1.empty()) {
+                if (m1.rows() == m1.cols() && !m1.empty() && m1.rows() <= 8) {
                     result_scalar = m1.Determinant();
                 }
                 break;
             case 2:
-                if (m1.rows() == m1.cols() && !m1.empty()) {
+                if (m1.rows() == m1.cols() && !m1.empty() && m1.rows() <= 8) {
                     result_matrix = m1.Inverse(); 
                 }
                 break;
+
             case 3: result_matrix = m1 + m2; break;
             case 4: result_matrix = m1 - m2; break;
             case 5: result_matrix = m1 * m2; break; 

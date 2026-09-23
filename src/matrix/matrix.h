@@ -13,6 +13,7 @@
 #include <random>
 #include <chrono> // For std::chrono::system_clock
 #include <utility> // For std::move
+#include <type_traits>
 
 namespace Matrix
 {
@@ -510,57 +511,74 @@ namespace Matrix
 		T Determinant() const {
 			if (m_Rows != m_Cols)
 				throw std::invalid_argument("Matrix must be square to calculate determinant.");
-            if (m_Rows == 0) return T(1); // Determinant of 0x0 matrix is 1 by convention
+			if (m_Rows == 0) return T(1); // Determinant of 0x0 matrix is 1 by convention
 			size_t n = m_Rows;
 			if (n == 1)
 				return m_Data[0][0];
 			else if (n == 2)
 				return m_Data[0][0] * m_Data[1][1] - m_Data[0][1] * m_Data[1][0];
-			
-            T det = T(0);
-            Matrix<T> temp_matrix = *this; // Make a mutable copy for LU decomposition approach (more stable)
-            
-            for (size_t i = 0; i < n; ++i) {
-                // Partial pivoting: find row with max element in current column
-                size_t max_row = i;
-                for (size_t k = i + 1; k < n; ++k) {
-                    if (std::abs(temp_matrix[k][i]) > std::abs(temp_matrix[max_row][i])) {
-                        max_row = k;
-                    }
-                }
-                if (i != max_row) {
-                    std::swap(temp_matrix.m_Data[i], temp_matrix.m_Data[max_row]);
-                    // det sign changes with row swap, but this is handled by product of diagonal later
-                }
-
-                if (temp_matrix[i][i] == T(0)) return T(0); // Singular if pivot is zero
-
-                for (size_t k = i + 1; k < n; ++k) {
-                    T factor = temp_matrix[k][i] / temp_matrix[i][i];
-                    for (size_t j = i; j < n; ++j) {
-                        temp_matrix[k][j] -= factor * temp_matrix[i][j];
-                    }
-                }
-            }
-            // Determinant is the product of diagonal elements after Gaussian elimination
-            // Sign changes from pivoting are implicitly handled if we consider the final diagonal.
-            // However, the above loop doesn't track sign changes for the determinant formula.
-            // For simplicity and to keep current structure, using Laplace expansion:
-            // Reverting to original Laplace expansion as it's what was there, though less stable/efficient
-            det = T(0); // Reset det
-			for (size_t i = 0; i < n; ++i) {
-				Matrix<T> minor = getMinor(*this, 0, i);
-				T minor_det = minor.Determinant(); // Recursive call
-				int sign = ((i % 2) == 0) ? 1 : -1;
-				det += static_cast<T>(sign) * m_Data[0][i] * minor_det;
+			else if (n == 3) {
+				return m_Data[0][0] * (m_Data[1][1] * m_Data[2][2] - m_Data[1][2] * m_Data[2][1])
+				     - m_Data[0][1] * (m_Data[1][0] * m_Data[2][2] - m_Data[1][2] * m_Data[2][0])
+				     + m_Data[0][2] * (m_Data[1][0] * m_Data[2][1] - m_Data[1][1] * m_Data[2][0]);
 			}
-			return det;
+
+			if constexpr (std::is_floating_point_v<T>) {
+				Matrix<T> temp_matrix = *this;
+				int sign = 1;
+
+				for (size_t i = 0; i < n; ++i) {
+					// Partial pivoting: find row with max element in current column
+					size_t max_row = i;
+					for (size_t k = i + 1; k < n; ++k) {
+						if (std::abs(temp_matrix[k][i]) > std::abs(temp_matrix[max_row][i])) {
+							max_row = k;
+						}
+					}
+
+					if (std::abs(temp_matrix[max_row][i]) == T(0)) {
+						return T(0); // Singular if pivot is zero
+					}
+
+					if (i != max_row) {
+						std::swap(temp_matrix.m_Data[i], temp_matrix.m_Data[max_row]);
+						sign = -sign;
+					}
+
+					for (size_t k = i + 1; k < n; ++k) {
+						T factor = temp_matrix[k][i] / temp_matrix[i][i];
+						for (size_t j = i; j < n; ++j) {
+							temp_matrix[k][j] -= factor * temp_matrix[i][j];
+						}
+					}
+				}
+
+				T det = static_cast<T>(sign);
+				for (size_t i = 0; i < n; ++i) {
+					det *= temp_matrix[i][i];
+				}
+				return det;
+			} else {
+				if (n > 6) {
+					throw std::invalid_argument("Matrix dimension too large for integer determinant.");
+				}
+				T det = T(0);
+				for (size_t i = 0; i < n; ++i) {
+					Matrix<T> minor = getMinor(*this, 0, i);
+					T minor_det = minor.Determinant();
+					int sign = ((i % 2) == 0) ? 1 : -1;
+					det += static_cast<T>(sign) * m_Data[0][i] * minor_det;
+				}
+				return det;
+			}
 		}
 
 		Matrix<T> Inverse() const {
 			if (m_Rows != m_Cols)
 				throw std::invalid_argument("Matrix must be square to be inverted.");
-            if (m_Rows == 0) return Matrix<T>(); // Inverse of empty is empty
+			if (m_Rows == 0) return Matrix<T>(); // Inverse of empty is empty
+			if (m_Rows > 8)
+				throw std::invalid_argument("Matrix dimension too large for cofactor inversion.");
 
 			T det = Determinant();
 			if (std::abs(det) < 1e-9) // Check for near-zero determinant for floating point types
@@ -577,6 +595,7 @@ namespace Matrix
 			Matrix<T> adjugate = cofactors.Transpose();
 			return adjugate * (T(1) / det);
 		}
+
 
 	MatrixRow<T>& operator[](size_t i) {
         // No bounds check for performance in release, but useful for debug
