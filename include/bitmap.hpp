@@ -439,5 +439,42 @@ Result<Bitmap, BitmapError> quantizeChannels(const Bitmap& bitmap, uint8_t bitsP
  */
 Result<Bitmap, BitmapError> medianFilter(const Bitmap& bitmap, uint32_t kernelSize = 3, bool preserveAlpha = true);
 
+/**
+ * @brief Applies a 2D Gaussian blur filter to the image for spatial smoothing and noise reduction.
+ *
+ * Implements separable 1D horizontal and vertical convolution passes using a normalized
+ * Gaussian kernel G(x) = exp(-x^2 / (2 * sigma^2)). Smooths out low-amplitude spatial noise
+ * and adversarial gradient perturbations.
+ *
+ * Edge boundaries are handled using border clamping (replicate edge pixels).
+ *
+ * @param bitmap The input bitmap (24bpp or 32bpp).
+ * @param sigma Standard deviation of the Gaussian distribution (must be positive and finite).
+ * @param radius Kernel radius in pixels. If 0, auto-computed as ceil(3 * sigma). Clamped to MAX_SAFE_BLUR_RADIUS (64).
+ * @param preserveAlpha If true, preserves the alpha channel untouched (for 32bpp); defaults to true.
+ * @return Result containing the smoothed bitmap or an error.
+ */
+Result<Bitmap, BitmapError> applyGaussianBlur(const Bitmap& bitmap, float sigma, int32_t radius = 0, bool preserveAlpha = true);
+
+/**
+ * @brief Applies an edge-preserving bilateral filter to the image.
+ *
+ * Combines a geometric spatial Gaussian kernel with a photometric range Gaussian kernel:
+ *   W(p, q) = exp(-||p - q||^2 / (2 * sigma_s^2)) * exp(-||I_p - I_q||^2 / (2 * sigma_r^2))
+ * Smooths subtle textures and gradient noise within continuous surfaces while strictly
+ * preserving high-contrast object contours and semantic edges.
+ *
+ * Edge boundaries are handled using border clamping (replicate edge pixels).
+ *
+ * @param bitmap The input bitmap (24bpp or 32bpp).
+ * @param spatialSigma Spatial standard deviation (sigma_s, must be positive and finite).
+ * @param rangeSigma Photometric range standard deviation (sigma_r, must be positive and finite).
+ * @param radius Kernel radius in pixels. If 0, auto-computed as ceil(2 * spatialSigma). Clamped to [1, 16].
+ * @param preserveAlpha If true, preserves the alpha channel untouched (for 32bpp); defaults to true.
+ * @return Result containing the filtered bitmap or an error.
+ */
+Result<Bitmap, BitmapError> applyBilateralFilter(const Bitmap& bitmap, float spatialSigma, float rangeSigma, int32_t radius = 0, bool preserveAlpha = true);
+
 } // namespace BmpTool
+
 

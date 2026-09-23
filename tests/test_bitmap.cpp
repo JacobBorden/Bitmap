@@ -162,6 +162,24 @@ TEST(BitmapTest, ApplyMedianFilter_InvalidKernel) {
     ASSERT_TRUE(res4.IsValid());
 }
 
+TEST(BitmapTest, ApplyGaussianBlur_Basic) {
+    Matrix::Matrix<Pixel> uniform_matrix(3, 3);
+    Pixel blue_pixel = {255, 0, 0, 255}; // Windows BGRA: blue
+    for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) uniform_matrix[i][j] = blue_pixel;
+    Bitmap::File bmp = CreateTestBitmap(uniform_matrix);
+    ASSERT_TRUE(bmp.IsValid());
+
+    Bitmap::File blurred_bmp = ApplyGaussianBlur(bmp, 1.0f, 1);
+    ASSERT_TRUE(blurred_bmp.IsValid());
+    Matrix::Matrix<Pixel> blurred_matrix = CreateMatrixFromBitmap(blurred_bmp);
+    ASSERT_EQ(blurred_matrix.rows(), 3);
+    ASSERT_EQ(blurred_matrix.cols(), 3);
+    EXPECT_NEAR(blurred_matrix[1][1].blue, 255, 1);
+    EXPECT_NEAR(blurred_matrix[1][1].green, 0, 1);
+    EXPECT_NEAR(blurred_matrix[1][1].red, 0, 1);
+}
+
+
 
 TEST(BitmapTest, ShrinkImage) {
     Matrix::Matrix<Pixel> large_matrix(4, 4); // 4x4 image

@@ -466,3 +466,179 @@ TEST(AdversarialFilterTest, MedianFilter_BoundaryAndErrorRejection) {
     EXPECT_EQ(BmpTool::medianFilter(trunc, 3).error(), BmpTool::BitmapError::InvalidImageData);
 }
 
+// ---------------------------------------------------------------------------
+// Week 2 Day 8: Spatial Smoothing (Gaussian & Bilateral Filter) Tests
+// ---------------------------------------------------------------------------
+
+TEST(AdversarialFilterTest, GaussianBlur_UniformIdentity) {
+    auto bmp = createTestBitmap32(7, 7, 120, 120, 120, 255);
+    auto res = BmpTool::applyGaussianBlur(bmp, 1.5f, 3);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& blurred = res.value();
+
+    for (size_t i = 0; i < blurred.data.size(); i += 4) {
+        EXPECT_NEAR(blurred.data[i], 120, 1);
+        EXPECT_NEAR(blurred.data[i + 1], 120, 1);
+        EXPECT_NEAR(blurred.data[i + 2], 120, 1);
+        EXPECT_EQ(blurred.data[i + 3], 255);
+    }
+}
+
+TEST(AdversarialFilterTest, GaussianBlur_ImpulseDiffusionSymmetry) {
+    // In a 9x9 black image, place a single white spike at center (4, 4)
+    auto bmp = createTestBitmap32(9, 9, 0, 0, 0, 255);
+    const size_t center_idx = (4 * 9 + 4) * 4;
+    bmp.data[center_idx]     = 255;
+    bmp.data[center_idx + 1] = 255;
+    bmp.data[center_idx + 2] = 255;
+
+    auto res = BmpTool::applyGaussianBlur(bmp, 1.0f, 2);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& blurred = res.value();
+
+    // Center pixel diffuses
+    EXPECT_LT(blurred.data[center_idx], 255);
+    EXPECT_GT(blurred.data[center_idx], 0);
+
+    // 4 cardinal neighbors must receive equal intensity due to radial symmetry
+    uint8_t top    = blurred.data[(3 * 9 + 4) * 4];
+    uint8_t bottom = blurred.data[(5 * 9 + 4) * 4];
+    uint8_t left   = blurred.data[(4 * 9 + 3) * 4];
+    uint8_t right  = blurred.data[(4 * 9 + 5) * 4];
+
+    EXPECT_EQ(top, bottom);
+    EXPECT_EQ(left, right);
+    EXPECT_EQ(top, left);
+    EXPECT_GT(top, 0);
+}
+
+TEST(AdversarialFilterTest, GaussianBlur_ParameterValidation) {
+    auto bmp = createTestBitmap32(4, 4, 100, 100, 100);
+
+    // Non-positive or non-finite sigma
+    EXPECT_TRUE(BmpTool::applyGaussianBlur(bmp, 0.0f).isError());
+    EXPECT_TRUE(BmpTool::applyGaussianBlur(bmp, -1.0f).isError());
+    EXPECT_TRUE(BmpTool::applyGaussianBlur(bmp, std::numeric_limits<float>::quiet_NaN()).isError());
+    EXPECT_TRUE(BmpTool::applyGaussianBlur(bmp, std::numeric_limits<float>::infinity()).isError());
+
+    // Negative radius
+    EXPECT_TRUE(BmpTool::applyGaussianBlur(bmp, 1.0f, -1).isError());
+
+    // Zero dimensions
+    auto zero_w = bmp;
+    zero_w.w = 0;
+    EXPECT_TRUE(BmpTool::applyGaussianBlur(zero_w, 1.0f).isError());
+
+    // Unsupported BPP
+    auto bad_bpp = bmp;
+    bad_bpp.bpp = 16;
+    EXPECT_TRUE(BmpTool::applyGaussianBlur(bad_bpp, 1.0f).isError());
+}
+
+TEST(AdversarialFilterTest, BilateralFilter_EdgePreservationVsGaussianBlur) {
+    // Construct a 10x10 image with a steep step boundary:
+    // Left half (cols 0..4) = 30, Right half (cols 5..9) = 220
+    BmpTool::Bitmap bmp;
+    bmp.w = 10;
+    bmp.h = 10;
+    bmp.bpp = 32;
+    bmp.data.resize(10 * 10 * 4);
+
+    for (uint32_t y = 0; y < 10; ++y) {
+        for (uint32_t x = 0; x < 10; ++x) {
+            uint8_t val = (x < 5) ? 30 : 220;
+            size_t idx = (y * 10 + x) * 4;
+            bmp.data[idx]     = val;
+            bmp.data[idx + 1] = val;
+            bmp.data[idx + 2] = val;
+            bmp.data[idx + 3] = 255;
+        }
+    }
+
+    // Bilateral filter with small rangeSigma (15.0f):
+    // Photometric distance across edge |220 - 30| = 190 >> 15, so edge weights vanish!
+    auto bilat_res = BmpTool::applyBilateralFilter(bmp, 2.0f, 15.0f, 3);
+    ASSERT_TRUE(bilat_res.isSuccess());
+    const auto& bilat = bilat_res.value();
+
+    // Edge must remain sharp: Col 4 near 30, Col 5 near 220
+    EXPECT_NEAR(bilat.data[(5 * 10 + 4) * 4], 30, 2);
+    EXPECT_NEAR(bilat.data[(5 * 10 + 5) * 4], 220, 2);
+
+    // In contrast, Gaussian blur diffuses the boundary significantly
+    auto gauss_res = BmpTool::applyGaussianBlur(bmp, 2.0f, 3);
+    ASSERT_TRUE(gauss_res.isSuccess());
+    const auto& gauss = gauss_res.value();
+    EXPECT_GT(gauss.data[(5 * 10 + 4) * 4], 50);  // Was 30, blurred upward
+    EXPECT_LT(gauss.data[(5 * 10 + 5) * 4], 200); // Was 220, blurred downward
+}
+
+TEST(AdversarialFilterTest, BilateralFilter_FlatRegionNoiseReduction) {
+    // 6x6 image with flat surface of 100 plus subtle noise perturbations (+-2)
+    auto bmp = createTestBitmap32(6, 6, 100, 100, 100);
+    bmp.data[(2 * 6 + 2) * 4] = 102; // small noise
+    bmp.data[(3 * 6 + 3) * 4] = 98;  // small noise
+
+    // Bilateral filter with rangeSigma = 20.0f (noise +-2 is well within range sigma)
+    auto res = BmpTool::applyBilateralFilter(bmp, 1.5f, 20.0f, 2);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& filtered = res.value();
+
+    // Noise is smoothed towards the mean of 100
+    EXPECT_NEAR(filtered.data[(2 * 6 + 2) * 4], 100, 1);
+    EXPECT_NEAR(filtered.data[(3 * 6 + 3) * 4], 100, 1);
+}
+
+TEST(AdversarialFilterTest, BilateralFilter_ParameterValidation) {
+    auto bmp = createTestBitmap32(4, 4, 100, 100, 100);
+
+    // Non-positive or non-finite sigmas
+    EXPECT_TRUE(BmpTool::applyBilateralFilter(bmp, 0.0f, 10.0f).isError());
+    EXPECT_TRUE(BmpTool::applyBilateralFilter(bmp, 1.0f, 0.0f).isError());
+    EXPECT_TRUE(BmpTool::applyBilateralFilter(bmp, -1.0f, 10.0f).isError());
+    EXPECT_TRUE(BmpTool::applyBilateralFilter(bmp, std::numeric_limits<float>::quiet_NaN(), 10.0f).isError());
+
+    // Negative radius
+    EXPECT_TRUE(BmpTool::applyBilateralFilter(bmp, 1.0f, 10.0f, -1).isError());
+
+    // Zero dimensions
+    auto zero_w = bmp;
+    zero_w.w = 0;
+    EXPECT_TRUE(BmpTool::applyBilateralFilter(zero_w, 1.0f, 10.0f).isError());
+
+    // Unsupported BPP
+    auto bad_bpp = bmp;
+    bad_bpp.bpp = 16;
+    EXPECT_TRUE(BmpTool::applyBilateralFilter(bad_bpp, 1.0f, 10.0f).isError());
+}
+
+TEST(AdversarialFilterTest, SpatialSmoothing_24bpp) {
+    auto bmp = createTestBitmap24(5, 5, 50, 100, 150);
+    auto g_res = BmpTool::applyGaussianBlur(bmp, 1.0f, 2);
+    ASSERT_TRUE(g_res.isSuccess());
+    EXPECT_EQ(g_res.value().bpp, 24u);
+    EXPECT_NEAR(g_res.value().data[0], 50, 1);
+    EXPECT_NEAR(g_res.value().data[1], 100, 1);
+    EXPECT_NEAR(g_res.value().data[2], 150, 1);
+
+    auto b_res = BmpTool::applyBilateralFilter(bmp, 1.0f, 20.0f, 2);
+    ASSERT_TRUE(b_res.isSuccess());
+    EXPECT_EQ(b_res.value().bpp, 24u);
+    EXPECT_NEAR(b_res.value().data[0], 50, 1);
+    EXPECT_NEAR(b_res.value().data[1], 100, 1);
+    EXPECT_NEAR(b_res.value().data[2], 150, 1);
+}
+
+TEST(AdversarialFilterTest, SpatialSmoothing_AlphaPreservation) {
+    auto bmp = createTestBitmap32(3, 3, 100, 100, 100, 88);
+
+    auto g_res = BmpTool::applyGaussianBlur(bmp, 1.0f, 1, true);
+    ASSERT_TRUE(g_res.isSuccess());
+    EXPECT_EQ(g_res.value().data[3], 88);
+
+    auto b_res = BmpTool::applyBilateralFilter(bmp, 1.0f, 20.0f, 1, true);
+    ASSERT_TRUE(b_res.isSuccess());
+    EXPECT_EQ(b_res.value().data[3], 88);
+}
+
+

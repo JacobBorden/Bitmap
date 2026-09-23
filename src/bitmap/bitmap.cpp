@@ -246,6 +246,89 @@ Bitmap::File ApplyMedianFilter(Bitmap::File bitmapFile, int kernelSize)
     return CreateBitmapFromMatrix(filteredMatrix);
 }
 
+// Applies a Gaussian blur filter to the image with a given sigma and radius.
+Bitmap::File ApplyGaussianBlur(Bitmap::File bitmapFile, float sigma, int radius)
+{
+    if (!std::isfinite(sigma) || sigma <= 0.0f) {
+        return bitmapFile;
+    }
+    if (radius < 0) {
+        return bitmapFile;
+    }
+    if (radius == 0) {
+        radius = static_cast<int>(std::ceil(3.0f * sigma));
+    }
+    radius = BmpTool::SafeMath::clamp(radius, 0, BmpTool::SafeMath::MAX_SAFE_BLUR_RADIUS);
+    if (radius == 0) {
+        return bitmapFile;
+    }
+
+    Matrix::Matrix<Pixel> originalMatrix = CreateMatrixFromBitmap(bitmapFile);
+    if (originalMatrix.rows() == 0 || originalMatrix.cols() == 0) {
+        return bitmapFile;
+    }
+
+    const int kernelSize = 2 * radius + 1;
+    std::vector<float> kernel(kernelSize);
+    const float twoSigmaSq = 2.0f * sigma * sigma;
+    float sumWeights = 0.0f;
+    for (int i = -radius; i <= radius; ++i) {
+        float w = std::exp(-static_cast<float>(i * i) / twoSigmaSq);
+        kernel[i + radius] = w;
+        sumWeights += w;
+    }
+    for (float& w : kernel) {
+        w /= sumWeights;
+    }
+
+    const int rows = static_cast<int>(originalMatrix.rows());
+    const int cols = static_cast<int>(originalMatrix.cols());
+
+    // Separable Pass 1: Horizontal blur into intermediate float buffer
+    struct FPixel { float r, g, b, a; };
+    std::vector<FPixel> temp(static_cast<size_t>(rows) * cols);
+
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            float red = 0.0f, green = 0.0f, blue = 0.0f, alpha = 0.0f;
+            for (int k = -radius; k <= radius; ++k) {
+                int sc = std::clamp(c + k, 0, cols - 1);
+                const Pixel& p = originalMatrix[r][sc];
+                float w = kernel[k + radius];
+                red += p.red * w;
+                green += p.green * w;
+                blue += p.blue * w;
+                alpha += p.alpha * w;
+            }
+            temp[static_cast<size_t>(r) * cols + c] = {red, green, blue, alpha};
+        }
+    }
+
+    // Separable Pass 2: Vertical blur from temp into blurredMatrix
+    Matrix::Matrix<Pixel> blurredMatrix(rows, cols);
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            float red = 0.0f, green = 0.0f, blue = 0.0f, alpha = 0.0f;
+            for (int k = -radius; k <= radius; ++k) {
+                int sr = std::clamp(r + k, 0, rows - 1);
+                const FPixel& p = temp[static_cast<size_t>(sr) * cols + c];
+                float w = kernel[k + radius];
+                red += p.r * w;
+                green += p.g * w;
+                blue += p.b * w;
+                alpha += p.a * w;
+            }
+            blurredMatrix[r][c].red   = static_cast<BYTE>(std::clamp(std::round(red), 0.0f, 255.0f));
+            blurredMatrix[r][c].green = static_cast<BYTE>(std::clamp(std::round(green), 0.0f, 255.0f));
+            blurredMatrix[r][c].blue  = static_cast<BYTE>(std::clamp(std::round(blue), 0.0f, 255.0f));
+            blurredMatrix[r][c].alpha = static_cast<BYTE>(std::clamp(std::round(alpha), 0.0f, 255.0f));
+        }
+    }
+
+    return CreateBitmapFromMatrix(blurredMatrix);
+}
+
+
 
 // Helper function for BGR to BGRA conversion with SIMD (declaration in bitmap.h)
 void internal_convert_bgr_to_bgra_simd(const uint8_t* src_row_bgr_ptr, ::Pixel* dest_row_pixel_ptr, size_t num_pixels_in_row) {

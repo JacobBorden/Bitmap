@@ -414,6 +414,16 @@ Bitmap::File ApplyBoxBlur(Bitmap::File bitmapFile, int blurRadius = 1);
 //   A new Bitmap::File object with the median filter applied.
 Bitmap::File ApplyMedianFilter(Bitmap::File bitmapFile, int kernelSize = 3);
 
+// Applies a Gaussian blur filter to the image with a given sigma and radius.
+// Parameters:
+//   bitmapFile: The image to filter.
+//   sigma: The standard deviation of the Gaussian distribution.
+//   radius: The radius of the kernel in pixels (0 for auto: ceil(3 * sigma)).
+// Returns:
+//   A new Bitmap::File object with the Gaussian blur applied.
+Bitmap::File ApplyGaussianBlur(Bitmap::File bitmapFile, float sigma, int radius = 0);
+
+
 
 // ---- New pixel manipulation functions (helpers for the above) ----
 
