@@ -423,6 +423,25 @@ Bitmap::File ApplyMedianFilter(Bitmap::File bitmapFile, int kernelSize = 3);
 //   A new Bitmap::File object with the Gaussian blur applied.
 Bitmap::File ApplyGaussianBlur(Bitmap::File bitmapFile, float sigma, int radius = 0);
 
+// Converts the image to grayscale using ITU-R BT.709 or BT.601 photometric luma weighting.
+// Parameters:
+//   bitmapFile: The image to convert.
+//   useBT709: If true, uses BT.709 weights; if false, uses BT.601 weights.
+// Returns:
+//   A new Bitmap::File object in photometric grayscale.
+Bitmap::File ConvertToPhotometricLuma(Bitmap::File bitmapFile, bool useBT709 = true);
+
+// Applies Local Contrast Normalization (LCN) to the image.
+// Parameters:
+//   bitmapFile: The image to normalize.
+//   sigma: Neighborhood standard deviation for local mean and variance.
+//   alpha: Contrast scaling factor.
+//   epsilon: Minimum variance threshold to prevent divide-by-zero.
+// Returns:
+//   A new Bitmap::File object with normalized local contrast.
+Bitmap::File ApplyLocalContrastNormalization(Bitmap::File bitmapFile, float sigma = 2.0f, float alpha = 64.0f, float epsilon = 1.0f);
+
+
 
 
 // ---- New pixel manipulation functions (helpers for the above) ----

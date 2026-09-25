@@ -641,4 +641,129 @@ TEST(AdversarialFilterTest, SpatialSmoothing_AlphaPreservation) {
     EXPECT_EQ(b_res.value().data[3], 88);
 }
 
+// ---------------------------------------------------------------------------
+// Week 2 Day 9: Local Contrast & Photometric Normalization Tests
+// ---------------------------------------------------------------------------
+
+TEST(AdversarialFilterTest, PhotometricLuma_BT709_Weights) {
+    // Test pure primaries against ITU-R BT.709 standard:
+    // Y = 0.2126*R + 0.7152*G + 0.0722*B
+    auto red_bmp = createTestBitmap32(2, 2, 255, 0, 0, 200);
+    auto res_r = BmpTool::extractPhotometricLuma(red_bmp, BmpTool::PhotometricStandard::BT709);
+    ASSERT_TRUE(res_r.isSuccess());
+    // 0.2126 * 255 = 54.213 -> 54
+    EXPECT_EQ(res_r.value().data[0], 54);
+    EXPECT_EQ(res_r.value().data[1], 54);
+    EXPECT_EQ(res_r.value().data[2], 54);
+    EXPECT_EQ(res_r.value().data[3], 200); // Alpha preserved
+
+    auto green_bmp = createTestBitmap32(2, 2, 0, 255, 0, 200);
+    auto res_g = BmpTool::extractPhotometricLuma(green_bmp, BmpTool::PhotometricStandard::BT709);
+    ASSERT_TRUE(res_g.isSuccess());
+    // 0.7152 * 255 = 182.376 -> 182
+    EXPECT_EQ(res_g.value().data[0], 182);
+    EXPECT_EQ(res_g.value().data[1], 182);
+    EXPECT_EQ(res_g.value().data[2], 182);
+
+    auto blue_bmp = createTestBitmap32(2, 2, 0, 0, 255, 200);
+    auto res_b = BmpTool::extractPhotometricLuma(blue_bmp, BmpTool::PhotometricStandard::BT709);
+    ASSERT_TRUE(res_b.isSuccess());
+    // 0.0722 * 255 = 18.411 -> 18
+    EXPECT_EQ(res_b.value().data[0], 18);
+    EXPECT_EQ(res_b.value().data[1], 18);
+    EXPECT_EQ(res_b.value().data[2], 18);
+}
+
+TEST(AdversarialFilterTest, PhotometricLuma_BT601_Weights) {
+    // Test pure primaries against ITU-R BT.601 standard:
+    // Y = 0.2990*R + 0.5870*G + 0.1140*B
+    auto red_bmp = createTestBitmap32(2, 2, 255, 0, 0, 255);
+    auto res_r = BmpTool::extractPhotometricLuma(red_bmp, BmpTool::PhotometricStandard::BT601);
+    ASSERT_TRUE(res_r.isSuccess());
+    // 0.2990 * 255 = 76.245 -> 76
+    EXPECT_EQ(res_r.value().data[0], 76);
+
+    auto green_bmp = createTestBitmap32(2, 2, 0, 255, 0, 255);
+    auto res_g = BmpTool::extractPhotometricLuma(green_bmp, BmpTool::PhotometricStandard::BT601);
+    ASSERT_TRUE(res_g.isSuccess());
+    // 0.5870 * 255 = 149.685 -> 150
+    EXPECT_EQ(res_g.value().data[0], 150);
+
+    auto blue_bmp = createTestBitmap32(2, 2, 0, 0, 255, 255);
+    auto res_b = BmpTool::extractPhotometricLuma(blue_bmp, BmpTool::PhotometricStandard::BT601);
+    ASSERT_TRUE(res_b.isSuccess());
+    // 0.1140 * 255 = 29.070 -> 29
+    EXPECT_EQ(res_b.value().data[0], 29);
+}
+
+TEST(AdversarialFilterTest, LocalContrastNormalize_UniformImage) {
+    // Any uniform image has zero local contrast deviation (I - mu = 0),
+    // mapping every pixel cleanly to the 128 baseline.
+    auto bmp = createTestBitmap32(8, 8, 160, 160, 160, 255);
+    auto res = BmpTool::localContrastNormalize(bmp, 2.0f, 64.0f, 1.0f);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& norm = res.value();
+
+    for (size_t i = 0; i < norm.data.size(); i += 4) {
+        EXPECT_EQ(norm.data[i], 128);
+        EXPECT_EQ(norm.data[i + 1], 128);
+        EXPECT_EQ(norm.data[i + 2], 128);
+        EXPECT_EQ(norm.data[i + 3], 255);
+    }
+}
+
+TEST(AdversarialFilterTest, LocalContrastNormalize_GlareSuppression) {
+    // Construct an 8x8 image of 100 with an adversarial high-brightness glare spike (255) at (4, 4)
+    auto bmp = createTestBitmap32(8, 8, 100, 100, 100, 255);
+    const size_t glare_idx = (4 * 8 + 4) * 4;
+    bmp.data[glare_idx]     = 255;
+    bmp.data[glare_idx + 1] = 255;
+    bmp.data[glare_idx + 2] = 255;
+
+    // Use alpha = 20.0f so extreme 5-sigma outlier maps within [128, 255)
+    auto res = BmpTool::localContrastNormalize(bmp, 2.0f, 20.0f, 1.0f);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& norm = res.value();
+
+    // The glare spike of 255 is normalized by its elevated local variance:
+    // It remains higher than 128, but well below 255, suppressing activation saturation.
+    EXPECT_GT(norm.data[glare_idx], 128);
+    EXPECT_LT(norm.data[glare_idx], 255);
+}
+
+TEST(AdversarialFilterTest, LocalContrastNormalize_ParameterValidation) {
+    auto bmp = createTestBitmap32(4, 4, 100, 100, 100);
+
+    // Non-positive or non-finite parameters
+    EXPECT_TRUE(BmpTool::localContrastNormalize(bmp, 0.0f, 64.0f, 1.0f).isError());
+    EXPECT_TRUE(BmpTool::localContrastNormalize(bmp, -1.0f, 64.0f, 1.0f).isError());
+    EXPECT_TRUE(BmpTool::localContrastNormalize(bmp, 2.0f, 0.0f, 1.0f).isError());
+    EXPECT_TRUE(BmpTool::localContrastNormalize(bmp, 2.0f, 64.0f, 0.0f).isError());
+    EXPECT_TRUE(BmpTool::localContrastNormalize(bmp, std::numeric_limits<float>::quiet_NaN(), 64.0f, 1.0f).isError());
+
+    // Zero dimensions
+    auto zero_w = bmp;
+    zero_w.w = 0;
+    EXPECT_TRUE(BmpTool::localContrastNormalize(zero_w, 2.0f).isError());
+
+    // Unsupported BPP
+    auto bad_bpp = bmp;
+    bad_bpp.bpp = 16;
+    EXPECT_TRUE(BmpTool::localContrastNormalize(bad_bpp, 2.0f).isError());
+}
+
+TEST(AdversarialFilterTest, LocalContrastNormalize_24bpp_and_Alpha) {
+    auto bmp24 = createTestBitmap24(4, 4, 100, 100, 100);
+    auto res24 = BmpTool::localContrastNormalize(bmp24, 1.5f);
+    ASSERT_TRUE(res24.isSuccess());
+    EXPECT_EQ(res24.value().bpp, 24u);
+    EXPECT_EQ(res24.value().data[0], 128);
+
+    auto bmp32 = createTestBitmap32(4, 4, 100, 100, 100, 77);
+    auto res32 = BmpTool::localContrastNormalize(bmp32, 1.5f, 64.0f, 1.0f, true);
+    ASSERT_TRUE(res32.isSuccess());
+    EXPECT_EQ(res32.value().data[3], 77); // Alpha preserved
+}
+
+
 

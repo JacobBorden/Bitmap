@@ -84,7 +84,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
     Bitmap::File result_bmp_file; 
     
-    switch (operation_choice % 26) { 
+    switch (operation_choice % 28) { 
         case 0: result_bmp_file = ShrinkImage(bmp_file, ConsumeInt(&Data, &Size, 1, 8)); break;
         case 1: result_bmp_file = RotateImageCounterClockwise(bmp_file); break;
         case 2: result_bmp_file = RotateImageClockwise(bmp_file); break;
@@ -111,6 +111,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
         case 23: result_bmp_file = ApplyBoxBlur(bmp_file, ConsumeInt(&Data, &Size, 0, 3)); break; 
         case 24: result_bmp_file = ApplyMedianFilter(bmp_file, ConsumeInt(&Data, &Size, 1, 6)); break;
         case 25: result_bmp_file = ApplyGaussianBlur(bmp_file, ConsumeFloat(&Data, &Size, 0.1f, 5.0f), ConsumeInt(&Data, &Size, 0, 4)); break;
+        case 26: result_bmp_file = ConvertToPhotometricLuma(bmp_file, (Consume<uint8_t>(&Data, &Size) % 2) != 0); break;
+        case 27: result_bmp_file = ApplyLocalContrastNormalization(bmp_file, ConsumeFloat(&Data, &Size, 0.5f, 3.0f), ConsumeFloat(&Data, &Size, 10.0f, 100.0f), ConsumeFloat(&Data, &Size, 0.1f, 5.0f)); break;
     }
 
 

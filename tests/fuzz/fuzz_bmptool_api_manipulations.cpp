@@ -95,7 +95,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     uint8_t operation_choice = Consume<uint8_t>(&current_data_ptr, &current_size_ptr);
     BmpTool::Result<BmpTool::Bitmap, BmpTool::BitmapError> result(BmpTool::BitmapError::UnknownError);
 
-    switch (operation_choice % 28) {
+    switch (operation_choice % 30) {
         case 0: result = BmpTool::shrink(src_bmp, ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 8)); break;
         case 1: result = BmpTool::rotateCounterClockwise(src_bmp); break;
         case 2: result = BmpTool::rotateClockwise(src_bmp); break;
@@ -124,6 +124,20 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
         case 25: result = BmpTool::medianFilter(src_bmp, ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 6), (Consume<uint8_t>(&current_data_ptr, &current_size_ptr) % 2) != 0); break;
         case 26: result = BmpTool::applyGaussianBlur(src_bmp, ConsumeFloat(&current_data_ptr, &current_size_ptr, 0.1f, 5.0f), ConsumeInt(&current_data_ptr, &current_size_ptr, 0, 4)); break;
         case 27: result = BmpTool::applyBilateralFilter(src_bmp, ConsumeFloat(&current_data_ptr, &current_size_ptr, 0.5f, 3.0f), ConsumeFloat(&current_data_ptr, &current_size_ptr, 5.0f, 50.0f), ConsumeInt(&current_data_ptr, &current_size_ptr, 0, 3)); break;
+        case 28: {
+            BmpTool::PhotometricStandard std = (Consume<uint8_t>(&current_data_ptr, &current_size_ptr) % 2 == 0) ?
+                BmpTool::PhotometricStandard::BT709 : BmpTool::PhotometricStandard::BT601;
+            result = BmpTool::extractPhotometricLuma(src_bmp, std);
+            break;
+        }
+        case 29: {
+            float sigma = ConsumeFloat(&current_data_ptr, &current_size_ptr, 0.5f, 3.0f);
+            float alpha = ConsumeFloat(&current_data_ptr, &current_size_ptr, 10.0f, 100.0f);
+            float eps = ConsumeFloat(&current_data_ptr, &current_size_ptr, 0.1f, 5.0f);
+            bool presAlpha = (Consume<uint8_t>(&current_data_ptr, &current_size_ptr) % 2) != 0;
+            result = BmpTool::localContrastNormalize(src_bmp, sigma, alpha, eps, presAlpha);
+            break;
+        }
         default:
             result = BmpTool::greyscale(src_bmp);
             break;

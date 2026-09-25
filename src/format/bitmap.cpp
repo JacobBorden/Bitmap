@@ -1919,6 +1919,177 @@ Result<Bitmap, BitmapError> applyBilateralFilter(const Bitmap& bitmap, float spa
     return out;
 }
 
+Result<Bitmap, BitmapError> extractPhotometricLuma(const Bitmap& bitmap, PhotometricStandard standard, bool preserveAlpha) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t expected_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, bytes_per_pixel, expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < expected_data_size) {
+        return BitmapError::InvalidImageData;
+    }
+
+    // 16-bit integer fixed-point weights (sum = 65536)
+    // BT.709: R: 13933 (0.2126), G: 46871 (0.7152), B: 4732 (0.0722)
+    // BT.601: R: 19595 (0.2990), G: 38470 (0.5870), B: 7471 (0.1140)
+    const uint32_t wR = (standard == PhotometricStandard::BT709) ? 13933u : 19595u;
+    const uint32_t wG = (standard == PhotometricStandard::BT709) ? 46871u : 38470u;
+    const uint32_t wB = (standard == PhotometricStandard::BT709) ? 4732u  : 7471u;
+
+    Bitmap out = bitmap;
+    out.data.resize(expected_data_size);
+    uint8_t* ptr = out.data.data();
+
+    if (bitmap.bpp == 32) {
+        for (size_t i = 0; i < total_pixels; ++i) {
+            uint32_t luma = (wR * ptr[0] + wG * ptr[1] + wB * ptr[2] + 32768u) >> 16;
+            uint8_t y = static_cast<uint8_t>(std::clamp(luma, 0u, 255u));
+            ptr[0] = y;
+            ptr[1] = y;
+            ptr[2] = y;
+            if (!preserveAlpha) {
+                ptr[3] = 255;
+            }
+            ptr += 4;
+        }
+    } else { // 24bpp
+        for (size_t i = 0; i < total_pixels; ++i) {
+            uint32_t luma = (wR * ptr[0] + wG * ptr[1] + wB * ptr[2] + 32768u) >> 16;
+            uint8_t y = static_cast<uint8_t>(std::clamp(luma, 0u, 255u));
+            ptr[0] = y;
+            ptr[1] = y;
+            ptr[2] = y;
+            ptr += 3;
+        }
+    }
+
+    return out;
+}
+
+Result<Bitmap, BitmapError> localContrastNormalize(const Bitmap& bitmap, float sigma, float alpha, float epsilon, bool preserveAlpha) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+    if (!std::isfinite(sigma) || sigma <= 0.0f ||
+        !std::isfinite(alpha) || alpha <= 0.0f ||
+        !std::isfinite(epsilon) || epsilon <= 0.0f) {
+        return BitmapError::InvalidImageData;
+    }
+
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t expected_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, bytes_per_pixel, expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < expected_data_size) {
+        return BitmapError::InvalidImageData;
+    }
+
+    int32_t radius = static_cast<int32_t>(std::ceil(3.0f * sigma));
+    radius = SafeMath::clamp(radius, 1, SafeMath::MAX_SAFE_BLUR_RADIUS);
+
+    const int kernelSize = 2 * radius + 1;
+    float kernel[129];
+    const float twoSigmaSq = 2.0f * sigma * sigma;
+    float sumWeights = 0.0f;
+    for (int i = -radius; i <= radius; ++i) {
+        float w = std::exp(-static_cast<float>(i * i) / twoSigmaSq);
+        kernel[i + radius] = w;
+        sumWeights += w;
+    }
+    for (int i = 0; i < kernelSize; ++i) {
+        kernel[i] /= sumWeights;
+    }
+
+    // Helper for separable 2-pass convolution of a flat float buffer
+    auto blurGrid = [&](const std::vector<float>& input, std::vector<float>& output) {
+        std::vector<float> temp(total_pixels);
+        for (uint32_t y = 0; y < bitmap.h; ++y) {
+            const size_t row_start = static_cast<size_t>(y) * bitmap.w;
+            for (uint32_t x = 0; x < bitmap.w; ++x) {
+                float val = 0.0f;
+                for (int k = -radius; k <= radius; ++k) {
+                    int sx = std::clamp(static_cast<int>(x) + k, 0, static_cast<int>(bitmap.w) - 1);
+                    val += input[row_start + static_cast<size_t>(sx)] * kernel[k + radius];
+                }
+                temp[row_start + x] = val;
+            }
+        }
+        for (uint32_t y = 0; y < bitmap.h; ++y) {
+            for (uint32_t x = 0; x < bitmap.w; ++x) {
+                float val = 0.0f;
+                for (int k = -radius; k <= radius; ++k) {
+                    int sy = std::clamp(static_cast<int>(y) + k, 0, static_cast<int>(bitmap.h) - 1);
+                    val += temp[static_cast<size_t>(sy) * bitmap.w + x] * kernel[k + radius];
+                }
+                output[static_cast<size_t>(y) * bitmap.w + x] = val;
+            }
+        }
+    };
+
+    const uint8_t* src = bitmap.data.data();
+    std::vector<float> inChan(total_pixels), inChan2(total_pixels);
+    std::vector<float> meanChan(total_pixels), meanChan2(total_pixels);
+
+    Bitmap out = bitmap;
+    out.data.resize(expected_data_size);
+    uint8_t* dst = out.data.data();
+
+    // Process each color channel (0 = R, 1 = G, 2 = B)
+    for (size_t c = 0; c < 3; ++c) {
+        for (size_t i = 0; i < total_pixels; ++i) {
+            float v = static_cast<float>(src[i * bytes_per_pixel + c]);
+            inChan[i]  = v;
+            inChan2[i] = v * v;
+        }
+
+        blurGrid(inChan, meanChan);
+        blurGrid(inChan2, meanChan2);
+
+        for (size_t i = 0; i < total_pixels; ++i) {
+            float mu = meanChan[i];
+            float var = std::max(0.0f, meanChan2[i] - mu * mu);
+            float dev = std::sqrt(var) + epsilon;
+            float orig = inChan[i];
+            float normalized = 128.0f + alpha * (orig - mu) / dev;
+            dst[i * bytes_per_pixel + c] = static_cast<uint8_t>(std::clamp(std::round(normalized), 0.0f, 255.0f));
+        }
+    }
+
+    if (bitmap.bpp == 32) {
+        for (size_t i = 0; i < total_pixels; ++i) {
+            dst[i * 4 + 3] = preserveAlpha ? src[i * 4 + 3] : 255;
+        }
+    }
+
+    return out;
+}
+
 } // namespace BmpTool
+
 
 

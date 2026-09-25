@@ -475,6 +475,49 @@ Result<Bitmap, BitmapError> applyGaussianBlur(const Bitmap& bitmap, float sigma,
  */
 Result<Bitmap, BitmapError> applyBilateralFilter(const Bitmap& bitmap, float spatialSigma, float rangeSigma, int32_t radius = 0, bool preserveAlpha = true);
 
+/**
+ * @brief Standard photometric weighting standards for RGB to grayscale luma conversion.
+ */
+enum class PhotometricStandard {
+    BT601, ///< ITU-R BT.601 standard (SDTV): Y = 0.299*R + 0.587*G + 0.114*B
+    BT709  ///< ITU-R BT.709 standard (sRGB / HDTV / modern vision models): Y = 0.2126*R + 0.7152*G + 0.0722*B
+};
+
+/**
+ * @brief Converts an image to grayscale using physiologically and photometrically accurate luma weighting.
+ *
+ * Replaces RGB channels with the computed photometric luma value Y:
+ *   BT.709: Y = 0.2126 * R + 0.7152 * G + 0.0722 * B
+ *   BT.601: Y = 0.2990 * R + 0.5870 * G + 0.1140 * B
+ *
+ * Implemented using high-performance 16-bit fixed-point arithmetic for zero float latency.
+ *
+ * @param bitmap The input bitmap (24bpp or 32bpp).
+ * @param standard Photometric standard to apply (defaults to BT709).
+ * @param preserveAlpha If true, preserves the alpha channel untouched (for 32bpp); defaults to true.
+ * @return Result containing the converted bitmap or an error.
+ */
+Result<Bitmap, BitmapError> extractPhotometricLuma(const Bitmap& bitmap, PhotometricStandard standard = PhotometricStandard::BT709, bool preserveAlpha = true);
+
+/**
+ * @brief Applies Local Contrast Normalization (LCN) to the image.
+ *
+ * Normalizes local image receptive fields by subtracting local context mean and dividing
+ * by local standard deviation:
+ *   I'(x, y) = clamp(128 + alpha * (I(x, y) - mu(x, y)) / (sigma(x, y) + epsilon), 0, 255)
+ *
+ * Neutralizes localized glare, lighting variations, and adversarial gradient brightness spikes.
+ *
+ * @param bitmap The input bitmap (24bpp or 32bpp).
+ * @param sigma Neighborhood Gaussian blur radius standard deviation (defaults to 2.0f).
+ * @param alpha Contrast scaling gain factor (defaults to 64.0f).
+ * @param epsilon Variance stability threshold to avoid division by zero on flat areas (defaults to 1.0f).
+ * @param preserveAlpha If true, preserves the alpha channel untouched (for 32bpp); defaults to true.
+ * @return Result containing the normalized bitmap or an error.
+ */
+Result<Bitmap, BitmapError> localContrastNormalize(const Bitmap& bitmap, float sigma = 2.0f, float alpha = 64.0f, float epsilon = 1.0f, bool preserveAlpha = true);
+
 } // namespace BmpTool
+
 
 

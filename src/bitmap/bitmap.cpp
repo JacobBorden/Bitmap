@@ -328,6 +328,147 @@ Bitmap::File ApplyGaussianBlur(Bitmap::File bitmapFile, float sigma, int radius)
     return CreateBitmapFromMatrix(blurredMatrix);
 }
 
+// Converts the image to grayscale using ITU-R BT.709 or BT.601 photometric luma weighting.
+Bitmap::File ConvertToPhotometricLuma(Bitmap::File bitmapFile, bool useBT709)
+{
+    Matrix::Matrix<Pixel> imageMatrix = CreateMatrixFromBitmap(bitmapFile);
+    const int rows = static_cast<int>(imageMatrix.rows());
+    const int cols = static_cast<int>(imageMatrix.cols());
+    if (rows == 0 || cols == 0) {
+        return bitmapFile;
+    }
+
+    const uint32_t wR = useBT709 ? 13933u : 19595u;
+    const uint32_t wG = useBT709 ? 46871u : 38470u;
+    const uint32_t wB = useBT709 ? 4732u  : 7471u;
+
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            Pixel& p = imageMatrix[r][c];
+            uint32_t luma = (wR * p.red + wG * p.green + wB * p.blue + 32768u) >> 16;
+            BYTE y = static_cast<BYTE>(std::clamp(luma, 0u, 255u));
+            p.red = y;
+            p.green = y;
+            p.blue = y;
+        }
+    }
+    return CreateBitmapFromMatrix(imageMatrix);
+}
+
+// Applies Local Contrast Normalization (LCN) to the image.
+Bitmap::File ApplyLocalContrastNormalization(Bitmap::File bitmapFile, float sigma, float alpha, float epsilon)
+{
+    if (!std::isfinite(sigma) || sigma <= 0.0f ||
+        !std::isfinite(alpha) || alpha <= 0.0f ||
+        !std::isfinite(epsilon) || epsilon <= 0.0f) {
+        return bitmapFile;
+    }
+
+    Matrix::Matrix<Pixel> originalMatrix = CreateMatrixFromBitmap(bitmapFile);
+    const int rows = static_cast<int>(originalMatrix.rows());
+    const int cols = static_cast<int>(originalMatrix.cols());
+    if (rows == 0 || cols == 0) {
+        return bitmapFile;
+    }
+
+    int radius = static_cast<int>(std::ceil(3.0f * sigma));
+    radius = BmpTool::SafeMath::clamp(radius, 1, BmpTool::SafeMath::MAX_SAFE_BLUR_RADIUS);
+
+    const int kernelSize = 2 * radius + 1;
+    std::vector<float> kernel(kernelSize);
+    const float twoSigmaSq = 2.0f * sigma * sigma;
+    float sumWeights = 0.0f;
+    for (int i = -radius; i <= radius; ++i) {
+        float w = std::exp(-static_cast<float>(i * i) / twoSigmaSq);
+        kernel[i + radius] = w;
+        sumWeights += w;
+    }
+    for (float& w : kernel) {
+        w /= sumWeights;
+    }
+
+    auto blurFloatGrid = [&](const std::vector<float>& input) -> std::vector<float> {
+        std::vector<float> temp(static_cast<size_t>(rows) * cols);
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                float val = 0.0f;
+                for (int k = -radius; k <= radius; ++k) {
+                    int sc = std::clamp(c + k, 0, cols - 1);
+                    val += input[static_cast<size_t>(r) * cols + sc] * kernel[k + radius];
+                }
+                temp[static_cast<size_t>(r) * cols + c] = val;
+            }
+        }
+        std::vector<float> result(static_cast<size_t>(rows) * cols);
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                float val = 0.0f;
+                for (int k = -radius; k <= radius; ++k) {
+                    int sr = std::clamp(r + k, 0, rows - 1);
+                    val += temp[static_cast<size_t>(sr) * cols + c] * kernel[k + radius];
+                }
+                result[static_cast<size_t>(r) * cols + c] = val;
+            }
+        }
+        return result;
+    };
+
+    const size_t numPixels = static_cast<size_t>(rows) * cols;
+    std::vector<float> inR(numPixels), inG(numPixels), inB(numPixels);
+    std::vector<float> inR2(numPixels), inG2(numPixels), inB2(numPixels);
+
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            const size_t idx = static_cast<size_t>(r) * cols + c;
+            const Pixel& p = originalMatrix[r][c];
+            float vr = static_cast<float>(p.red);
+            float vg = static_cast<float>(p.green);
+            float vb = static_cast<float>(p.blue);
+            inR[idx]  = vr;
+            inR2[idx] = vr * vr;
+            inG[idx]  = vg;
+            inG2[idx] = vg * vg;
+            inB[idx]  = vb;
+            inB2[idx] = vb * vb;
+        }
+    }
+
+    std::vector<float> meanR  = blurFloatGrid(inR);
+    std::vector<float> meanR2 = blurFloatGrid(inR2);
+    std::vector<float> meanG  = blurFloatGrid(inG);
+    std::vector<float> meanG2 = blurFloatGrid(inG2);
+    std::vector<float> meanB  = blurFloatGrid(inB);
+    std::vector<float> meanB2 = blurFloatGrid(inB2);
+
+    Matrix::Matrix<Pixel> normalizedMatrix(rows, cols);
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            const size_t idx = static_cast<size_t>(r) * cols + c;
+            const Pixel& p = originalMatrix[r][c];
+
+            float varR = std::max(0.0f, meanR2[idx] - meanR[idx] * meanR[idx]);
+            float devR = std::sqrt(varR) + epsilon;
+            float normR = 128.0f + alpha * (static_cast<float>(p.red) - meanR[idx]) / devR;
+
+            float varG = std::max(0.0f, meanG2[idx] - meanG[idx] * meanG[idx]);
+            float devG = std::sqrt(varG) + epsilon;
+            float normG = 128.0f + alpha * (static_cast<float>(p.green) - meanG[idx]) / devG;
+
+            float varB = std::max(0.0f, meanB2[idx] - meanB[idx] * meanB[idx]);
+            float devB = std::sqrt(varB) + epsilon;
+            float normB = 128.0f + alpha * (static_cast<float>(p.blue) - meanB[idx]) / devB;
+
+            normalizedMatrix[r][c].red   = static_cast<BYTE>(std::clamp(std::round(normR), 0.0f, 255.0f));
+            normalizedMatrix[r][c].green = static_cast<BYTE>(std::clamp(std::round(normG), 0.0f, 255.0f));
+            normalizedMatrix[r][c].blue  = static_cast<BYTE>(std::clamp(std::round(normB), 0.0f, 255.0f));
+            normalizedMatrix[r][c].alpha = p.alpha;
+        }
+    }
+
+    return CreateBitmapFromMatrix(normalizedMatrix);
+}
+
+
 
 
 // Helper function for BGR to BGRA conversion with SIMD (declaration in bitmap.h)

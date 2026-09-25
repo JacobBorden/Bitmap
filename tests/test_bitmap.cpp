@@ -179,6 +179,50 @@ TEST(BitmapTest, ApplyGaussianBlur_Basic) {
     EXPECT_NEAR(blurred_matrix[1][1].red, 0, 1);
 }
 
+TEST(BitmapTest, ConvertToPhotometricLuma_Basic) {
+    Matrix::Matrix<Pixel> matrix(2, 2);
+    // Red pixel in Windows BGRA: B=0, G=0, R=255, A=255
+    Pixel red_pixel = {0, 0, 255, 255};
+    for (int i = 0; i < 2; ++i) for (int j = 0; j < 2; ++j) matrix[i][j] = red_pixel;
+    Bitmap::File bmp = CreateTestBitmap(matrix);
+    ASSERT_TRUE(bmp.IsValid());
+
+    // BT.709: Y = 0.2126 * 255 = 54
+    Bitmap::File luma_709 = ConvertToPhotometricLuma(bmp, true);
+    ASSERT_TRUE(luma_709.IsValid());
+    Matrix::Matrix<Pixel> mat_709 = CreateMatrixFromBitmap(luma_709);
+    EXPECT_EQ(mat_709[0][0].red, 54);
+    EXPECT_EQ(mat_709[0][0].green, 54);
+    EXPECT_EQ(mat_709[0][0].blue, 54);
+
+    // BT.601: Y = 0.2990 * 255 = 76
+    Bitmap::File luma_601 = ConvertToPhotometricLuma(bmp, false);
+    ASSERT_TRUE(luma_601.IsValid());
+    Matrix::Matrix<Pixel> mat_601 = CreateMatrixFromBitmap(luma_601);
+    EXPECT_EQ(mat_601[0][0].red, 76);
+    EXPECT_EQ(mat_601[0][0].green, 76);
+    EXPECT_EQ(mat_601[0][0].blue, 76);
+}
+
+TEST(BitmapTest, ApplyLocalContrastNormalization_Uniform) {
+    Matrix::Matrix<Pixel> uniform_matrix(4, 4);
+    Pixel gray_pixel = {150, 150, 150, 255};
+    for (int i = 0; i < 4; ++i) for (int j = 0; j < 4; ++j) uniform_matrix[i][j] = gray_pixel;
+    Bitmap::File bmp = CreateTestBitmap(uniform_matrix);
+    ASSERT_TRUE(bmp.IsValid());
+
+    Bitmap::File lcn_bmp = ApplyLocalContrastNormalization(bmp, 1.5f, 64.0f, 1.0f);
+    ASSERT_TRUE(lcn_bmp.IsValid());
+    Matrix::Matrix<Pixel> lcn_matrix = CreateMatrixFromBitmap(lcn_bmp);
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            EXPECT_EQ(lcn_matrix[i][j].red, 128);
+            EXPECT_EQ(lcn_matrix[i][j].green, 128);
+            EXPECT_EQ(lcn_matrix[i][j].blue, 128);
+        }
+    }
+}
+
 
 
 TEST(BitmapTest, ShrinkImage) {
