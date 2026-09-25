@@ -74,11 +74,12 @@ This document outlines the **5-week execution schedule** for the Bitmap Hardened
   * Implement fast ITU-R BT.601 / BT.709 photometric luma extraction for single-channel grayscale model ingestion.
 
 * **Day 10 (W2D5): Week 2 Verification & Checkpoint**
-  * **Checkpoint 2 Execution**:
-    * Construct synthetic adversarial test patterns (high-frequency noise injection, single-pixel attacks).
-    * Run test suite measuring perturbation reduction ratio (noise variance before vs after filters).
-    * Ensure all defense filters handle image borders and edges safely.
-    * Commit and tag Week 2 milestone on `development`.
+  * **Checkpoint 2 Execution (Completed)**:
+    * Constructed synthetic adversarial test patterns (high-frequency noise injection, single-pixel attacks).
+    * Executed test suite measuring perturbation reduction ratio (>70% Gaussian noise attenuation, 100% low-amplitude FGSM suppression, 100% single-pixel impulse elimination).
+    * Validated edge cases and border clamping safety on 1x1, 2x1, 1x2, 2x2 buffers across all filters.
+    * Validated end-to-end chained defense pipeline (`Median -> Bilateral -> Quantize -> LCN`).
+    * Tagged release milestone `v0.2.0-checkpoint2` on `development`.
 
 ---
 

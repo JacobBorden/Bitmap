@@ -765,5 +765,214 @@ TEST(AdversarialFilterTest, LocalContrastNormalize_24bpp_and_Alpha) {
     EXPECT_EQ(res32.value().data[3], 77); // Alpha preserved
 }
 
+// ---------------------------------------------------------------------------
+// Week 2 Day 10: Week 2 Verification & Checkpoint 2 Suite
+// ---------------------------------------------------------------------------
+
+TEST(AdversarialFilterTest, Checkpoint2_PerturbationReductionRatio_GaussianNoise) {
+    // Construct a 16x16 synthetic image with gentle gradient
+    const uint32_t w = 16, h = 16;
+    BmpTool::Bitmap clean_bmp;
+    clean_bmp.w = w;
+    clean_bmp.h = h;
+    clean_bmp.bpp = 32;
+    clean_bmp.data.resize(w * h * 4);
+
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            uint8_t base = static_cast<uint8_t>(50 + (x + y) * 3);
+            size_t idx = (y * w + x) * 4;
+            clean_bmp.data[idx]     = base;
+            clean_bmp.data[idx + 1] = base;
+            clean_bmp.data[idx + 2] = base;
+            clean_bmp.data[idx + 3] = 255;
+        }
+    }
+
+    // Inject high-frequency zero-mean adversarial perturbation (+-4)
+    BmpTool::Bitmap noisy_bmp = clean_bmp;
+    double initial_noise_energy = 0.0;
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            int8_t delta = ((x + y) % 2 == 0) ? 4 : -4;
+            size_t idx = (y * w + x) * 4;
+            for (size_t c = 0; c < 3; ++c) {
+                int val = static_cast<int>(clean_bmp.data[idx + c]) + delta;
+                noisy_bmp.data[idx + c] = static_cast<uint8_t>(std::clamp(val, 0, 255));
+                double diff = static_cast<double>(noisy_bmp.data[idx + c]) - clean_bmp.data[idx + c];
+                initial_noise_energy += diff * diff;
+            }
+        }
+    }
+    ASSERT_GT(initial_noise_energy, 0.0);
+
+    // Apply Gaussian blur (defense smoothing)
+    auto gauss_res = BmpTool::applyGaussianBlur(noisy_bmp, 1.0f, 2);
+    ASSERT_TRUE(gauss_res.isSuccess());
+    const auto& defended = gauss_res.value();
+
+    // Measure residual perturbation energy: E_defended = sum((defended - clean)^2)
+    // Avoid measuring the outer 2-pixel boundary where edge clamping happens
+    double residual_noise_energy = 0.0;
+    for (uint32_t y = 2; y < h - 2; ++y) {
+        for (uint32_t x = 2; x < w - 2; ++x) {
+            size_t idx = (y * w + x) * 4;
+            for (size_t c = 0; c < 3; ++c) {
+                double diff = static_cast<double>(defended.data[idx + c]) - clean_bmp.data[idx + c];
+                residual_noise_energy += diff * diff;
+            }
+        }
+    }
+
+    double original_sub_energy = 0.0;
+    for (uint32_t y = 2; y < h - 2; ++y) {
+        for (uint32_t x = 2; x < w - 2; ++x) {
+            size_t idx = (y * w + x) * 4;
+            for (size_t c = 0; c < 3; ++c) {
+                double diff = static_cast<double>(noisy_bmp.data[idx + c]) - clean_bmp.data[idx + c];
+                original_sub_energy += diff * diff;
+            }
+        }
+    }
+
+    // High-frequency alternating +-4 noise should be attenuated by > 70%
+    double noise_reduction_ratio = 1.0 - (residual_noise_energy / original_sub_energy);
+    EXPECT_GT(noise_reduction_ratio, 0.70);
+}
+
+TEST(AdversarialFilterTest, Checkpoint2_PerturbationReductionRatio_FeatureSqueezing) {
+    // Test feature squeezing on low-amplitude adversarial attack (FGSM with epsilon = 3)
+    const uint32_t w = 8, h = 8;
+    auto clean = createTestBitmap32(w, h, 120, 120, 120);
+    auto attacked = clean;
+
+    double attack_energy = 0.0;
+    for (size_t i = 0; i < clean.data.size(); i += 4) {
+        attacked.data[i]     += 3;
+        attacked.data[i + 1] -= 3;
+        attacked.data[i + 2] += 2;
+        attack_energy += 3.0 * 3.0 + 3.0 * 3.0 + 2.0 * 2.0;
+    }
+
+    // 4-bit quantization maps 120, 123, 117, 122 to the same bin (119)
+    auto sq_clean = BmpTool::quantizeChannels(clean, 4);
+    auto sq_attack = BmpTool::quantizeChannels(attacked, 4);
+    ASSERT_TRUE(sq_clean.isSuccess());
+    ASSERT_TRUE(sq_attack.isSuccess());
+
+    double residual_discrepancy = 0.0;
+    for (size_t i = 0; i < clean.data.size(); i += 4) {
+        for (size_t c = 0; c < 3; ++c) {
+            double d = static_cast<double>(sq_attack.value().data[i + c]) - sq_clean.value().data[i + c];
+            residual_discrepancy += d * d;
+        }
+    }
+
+    // 100% suppression of adversarial delta between clean and attacked images!
+    EXPECT_EQ(residual_discrepancy, 0.0);
+}
+
+TEST(AdversarialFilterTest, Checkpoint2_SinglePixelAttackSuppression_Median) {
+    // 9x9 image with sparse single-pixel adversarial perturbations (one per 3x3 block)
+    const uint32_t w = 9, h = 9;
+    auto clean = createTestBitmap32(w, h, 80, 80, 80);
+    auto attacked = clean;
+
+    // Place single-pixel attacks at isolated positions
+    attacked.data[(1 * 9 + 1) * 4] = 255;
+    attacked.data[(4 * 9 + 4) * 4] = 0;
+    attacked.data[(7 * 9 + 7) * 4] = 255;
+
+    auto defended = BmpTool::medianFilter(attacked, 3);
+    ASSERT_TRUE(defended.isSuccess());
+
+    // Single-pixel attacks must be 100% eliminated by 3x3 median
+    EXPECT_EQ(defended.value().data[(1 * 9 + 1) * 4], 80);
+    EXPECT_EQ(defended.value().data[(4 * 9 + 4) * 4], 80);
+    EXPECT_EQ(defended.value().data[(7 * 9 + 7) * 4], 80);
+}
+
+TEST(AdversarialFilterTest, Checkpoint2_BorderAndCornerSafety) {
+    // Test 1x1, 2x1, 1x2, 2x2 edge cases across all Day 6-9 filters
+    std::vector<std::pair<uint32_t, uint32_t>> tiny_dims = {{1, 1}, {2, 1}, {1, 2}, {2, 2}, {3, 1}, {1, 3}};
+
+    for (const auto& [w, h] : tiny_dims) {
+        auto bmp32 = createTestBitmap32(w, h, 64, 128, 192, 255);
+        auto bmp24 = createTestBitmap24(w, h, 64, 128, 192);
+
+        // 1. Quantization
+        EXPECT_TRUE(BmpTool::quantizeChannels(bmp32, 4).isSuccess());
+        EXPECT_TRUE(BmpTool::quantizeChannels(bmp24, 4).isSuccess());
+
+        // 2. Median Filter
+        EXPECT_TRUE(BmpTool::medianFilter(bmp32, 3).isSuccess());
+        EXPECT_TRUE(BmpTool::medianFilter(bmp24, 3).isSuccess());
+        EXPECT_TRUE(BmpTool::medianFilter(bmp32, 5).isSuccess());
+
+        // 3. Gaussian Blur
+        EXPECT_TRUE(BmpTool::applyGaussianBlur(bmp32, 1.0f, 1).isSuccess());
+        EXPECT_TRUE(BmpTool::applyGaussianBlur(bmp24, 1.0f, 1).isSuccess());
+
+        // 4. Bilateral Filter
+        EXPECT_TRUE(BmpTool::applyBilateralFilter(bmp32, 1.0f, 20.0f, 1).isSuccess());
+        EXPECT_TRUE(BmpTool::applyBilateralFilter(bmp24, 1.0f, 20.0f, 1).isSuccess());
+
+        // 5. Photometric Luma
+        EXPECT_TRUE(BmpTool::extractPhotometricLuma(bmp32, BmpTool::PhotometricStandard::BT709).isSuccess());
+        EXPECT_TRUE(BmpTool::extractPhotometricLuma(bmp24, BmpTool::PhotometricStandard::BT601).isSuccess());
+
+        // 6. Local Contrast Normalization
+        EXPECT_TRUE(BmpTool::localContrastNormalize(bmp32, 1.0f).isSuccess());
+        EXPECT_TRUE(BmpTool::localContrastNormalize(bmp24, 1.0f).isSuccess());
+    }
+}
+
+TEST(AdversarialFilterTest, Checkpoint2_ChainedDefensePipeline) {
+    // End-to-end defense pipeline chain:
+    // Input -> Median Filter (impulse removal)
+    //       -> Bilateral Filter (spatial smoothing while preserving edges)
+    //       -> Feature Squeezing (coarse quantization to strip low-amplitude gradients)
+    //       -> Local Contrast Normalization (lighting normalization)
+    const uint32_t w = 16, h = 16;
+    auto bmp = createTestBitmap32(w, h, 100, 100, 100, 255);
+
+    // Corrupt with both salt-and-pepper noise AND subtle gradient noise
+    bmp.data[(5 * 16 + 5) * 4] = 255; // salt noise
+    bmp.data[(10 * 16 + 10) * 4] = 0; // pepper noise
+    for (size_t i = 0; i < bmp.data.size(); i += 4) {
+        bmp.data[i] = static_cast<uint8_t>(std::clamp(static_cast<int>(bmp.data[i]) + (static_cast<int>(i % 5) - 2), 0, 255));
+    }
+
+    // Step 1: Median Filter
+    auto step1 = BmpTool::medianFilter(bmp, 3);
+    ASSERT_TRUE(step1.isSuccess());
+
+    // Step 2: Bilateral Filter
+    auto step2 = BmpTool::applyBilateralFilter(step1.value(), 1.0f, 15.0f, 2);
+    ASSERT_TRUE(step2.isSuccess());
+
+    // Step 3: Feature Squeezing (5-bit)
+    auto step3 = BmpTool::quantizeChannels(step2.value(), 5);
+    ASSERT_TRUE(step3.isSuccess());
+
+    // Step 4: Local Contrast Normalization
+    auto step4 = BmpTool::localContrastNormalize(step3.value(), 1.5f, 64.0f, 1.0f);
+    ASSERT_TRUE(step4.isSuccess());
+
+    const auto& sanitized = step4.value();
+    EXPECT_EQ(sanitized.w, w);
+    EXPECT_EQ(sanitized.h, h);
+    EXPECT_EQ(sanitized.bpp, 32u);
+    EXPECT_EQ(sanitized.data.size(), w * h * 4u);
+    EXPECT_EQ(sanitized.data[3], 255); // Alpha preserved
+
+    // Under uniform base with smoothed noise, all sanitized pixels should converge near 128
+    for (size_t i = 0; i < sanitized.data.size(); i += 4) {
+        EXPECT_NEAR(sanitized.data[i], 128, 10);
+        EXPECT_NEAR(sanitized.data[i + 1], 128, 10);
+        EXPECT_NEAR(sanitized.data[i + 2], 128, 10);
+    }
+}
+
 
 
