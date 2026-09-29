@@ -2089,6 +2089,249 @@ Result<Bitmap, BitmapError> localContrastNormalize(const Bitmap& bitmap, float s
     return out;
 }
 
+Result<Bitmap, BitmapError> resizeBilinear(const Bitmap& bitmap, uint32_t targetWidth, uint32_t targetHeight) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+    if (targetWidth == 0 || targetHeight == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (targetWidth > SafeMath::MAX_SAFE_DIMENSION || targetHeight > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t src_total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), src_total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t src_expected_bytes = 0;
+    if (!SafeMath::multiply(src_total_pixels, bytes_per_pixel, src_expected_bytes) || src_expected_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < src_expected_bytes) {
+        return BitmapError::InvalidImageData;
+    }
+
+    if (bitmap.w == targetWidth && bitmap.h == targetHeight) {
+        return bitmap;
+    }
+
+    size_t dst_total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(targetWidth), static_cast<size_t>(targetHeight), dst_total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t dst_expected_bytes = 0;
+    if (!SafeMath::multiply(dst_total_pixels, bytes_per_pixel, dst_expected_bytes) || dst_expected_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+
+    Bitmap out;
+    out.w = targetWidth;
+    out.h = targetHeight;
+    out.bpp = bitmap.bpp;
+    out.data.resize(dst_expected_bytes);
+
+    const float scale_x = static_cast<float>(bitmap.w) / static_cast<float>(targetWidth);
+    const float scale_y = static_cast<float>(bitmap.h) / static_cast<float>(targetHeight);
+
+    struct XWeight {
+        int32_t x0, x1;
+        float w0, w1;
+    };
+    std::vector<XWeight> x_weights(targetWidth);
+    for (uint32_t x = 0; x < targetWidth; ++x) {
+        float src_x = (static_cast<float>(x) + 0.5f) * scale_x - 0.5f;
+        int32_t x0 = static_cast<int32_t>(std::floor(src_x));
+        int32_t x1 = x0 + 1;
+        float dx = src_x - static_cast<float>(x0);
+        x0 = std::clamp(x0, 0, static_cast<int32_t>(bitmap.w - 1));
+        x1 = std::clamp(x1, 0, static_cast<int32_t>(bitmap.w - 1));
+        dx = std::clamp(dx, 0.0f, 1.0f);
+        x_weights[x] = { x0, x1, 1.0f - dx, dx };
+    }
+
+    const uint8_t* src_raw = bitmap.data.data();
+    uint8_t* dst_raw = out.data.data();
+    const size_t src_stride = static_cast<size_t>(bitmap.w) * bytes_per_pixel;
+    const size_t dst_stride = static_cast<size_t>(targetWidth) * bytes_per_pixel;
+
+    for (uint32_t y = 0; y < targetHeight; ++y) {
+        float src_y = (static_cast<float>(y) + 0.5f) * scale_y - 0.5f;
+        int32_t y0 = static_cast<int32_t>(std::floor(src_y));
+        int32_t y1 = y0 + 1;
+        float dy = src_y - static_cast<float>(y0);
+        y0 = std::clamp(y0, 0, static_cast<int32_t>(bitmap.h - 1));
+        y1 = std::clamp(y1, 0, static_cast<int32_t>(bitmap.h - 1));
+        dy = std::clamp(dy, 0.0f, 1.0f);
+        const float wy0 = 1.0f - dy;
+        const float wy1 = dy;
+
+        const uint8_t* row0 = src_raw + static_cast<size_t>(y0) * src_stride;
+        const uint8_t* row1 = src_raw + static_cast<size_t>(y1) * src_stride;
+        uint8_t* dst_row = dst_raw + static_cast<size_t>(y) * dst_stride;
+
+        for (uint32_t x = 0; x < targetWidth; ++x) {
+            const auto& xw = x_weights[x];
+            const float w00 = xw.w0 * wy0;
+            const float w10 = xw.w1 * wy0;
+            const float w01 = xw.w0 * wy1;
+            const float w11 = xw.w1 * wy1;
+
+            const uint8_t* p00 = row0 + static_cast<size_t>(xw.x0) * bytes_per_pixel;
+            const uint8_t* p10 = row0 + static_cast<size_t>(xw.x1) * bytes_per_pixel;
+            const uint8_t* p01 = row1 + static_cast<size_t>(xw.x0) * bytes_per_pixel;
+            const uint8_t* p11 = row1 + static_cast<size_t>(xw.x1) * bytes_per_pixel;
+
+            for (size_t c = 0; c < bytes_per_pixel; ++c) {
+                float v = w00 * p00[c] + w10 * p10[c] + w01 * p01[c] + w11 * p11[c];
+                dst_row[x * bytes_per_pixel + c] = static_cast<uint8_t>(std::clamp(std::round(v), 0.0f, 255.0f));
+            }
+        }
+    }
+
+    return out;
+}
+
+Result<Bitmap, BitmapError> resizeAreaAveraging(const Bitmap& bitmap, uint32_t targetWidth, uint32_t targetHeight) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+    if (targetWidth == 0 || targetHeight == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (targetWidth > SafeMath::MAX_SAFE_DIMENSION || targetHeight > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+
+    // If upscaling is requested in either axis, seamlessly use bilinear interpolation
+    if (targetWidth > bitmap.w || targetHeight > bitmap.h) {
+        return resizeBilinear(bitmap, targetWidth, targetHeight);
+    }
+
+    if (bitmap.w == targetWidth && bitmap.h == targetHeight) {
+        return bitmap;
+    }
+
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t src_total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), src_total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t src_expected_bytes = 0;
+    if (!SafeMath::multiply(src_total_pixels, bytes_per_pixel, src_expected_bytes) || src_expected_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < src_expected_bytes) {
+        return BitmapError::InvalidImageData;
+    }
+
+    size_t dst_total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(targetWidth), static_cast<size_t>(targetHeight), dst_total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t dst_expected_bytes = 0;
+    if (!SafeMath::multiply(dst_total_pixels, bytes_per_pixel, dst_expected_bytes) || dst_expected_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+
+    Bitmap out;
+    out.w = targetWidth;
+    out.h = targetHeight;
+    out.bpp = bitmap.bpp;
+    out.data.resize(dst_expected_bytes);
+
+    const float scale_x = static_cast<float>(bitmap.w) / static_cast<float>(targetWidth);
+    const float scale_y = static_cast<float>(bitmap.h) / static_cast<float>(targetHeight);
+    const float inv_area = 1.0f / (scale_x * scale_y);
+
+    struct Span1D {
+        int32_t start, end;
+        std::vector<float> weights;
+    };
+
+    std::vector<Span1D> x_spans(targetWidth);
+    for (uint32_t x = 0; x < targetWidth; ++x) {
+        float x_start = static_cast<float>(x) * scale_x;
+        float x_end = static_cast<float>(x + 1) * scale_x;
+        int32_t ix0 = static_cast<int32_t>(std::floor(x_start));
+        int32_t ix1 = static_cast<int32_t>(std::ceil(x_end));
+        ix0 = std::clamp(ix0, 0, static_cast<int32_t>(bitmap.w - 1));
+        ix1 = std::clamp(ix1, ix0 + 1, static_cast<int32_t>(bitmap.w));
+        x_spans[x].start = ix0;
+        x_spans[x].end = ix1;
+        x_spans[x].weights.resize(ix1 - ix0);
+        for (int32_t i = ix0; i < ix1; ++i) {
+            float w = std::min(static_cast<float>(i + 1), x_end) - std::max(static_cast<float>(i), x_start);
+            x_spans[x].weights[i - ix0] = std::max(0.0f, w);
+        }
+    }
+
+    std::vector<Span1D> y_spans(targetHeight);
+    for (uint32_t y = 0; y < targetHeight; ++y) {
+        float y_start = static_cast<float>(y) * scale_y;
+        float y_end = static_cast<float>(y + 1) * scale_y;
+        int32_t iy0 = static_cast<int32_t>(std::floor(y_start));
+        int32_t iy1 = static_cast<int32_t>(std::ceil(y_end));
+        iy0 = std::clamp(iy0, 0, static_cast<int32_t>(bitmap.h - 1));
+        iy1 = std::clamp(iy1, iy0 + 1, static_cast<int32_t>(bitmap.h));
+        y_spans[y].start = iy0;
+        y_spans[y].end = iy1;
+        y_spans[y].weights.resize(iy1 - iy0);
+        for (int32_t i = iy0; i < iy1; ++i) {
+            float w = std::min(static_cast<float>(i + 1), y_end) - std::max(static_cast<float>(i), y_start);
+            y_spans[y].weights[i - iy0] = std::max(0.0f, w);
+        }
+    }
+
+    const uint8_t* src_raw = bitmap.data.data();
+    uint8_t* dst_raw = out.data.data();
+    const size_t src_stride = static_cast<size_t>(bitmap.w) * bytes_per_pixel;
+    const size_t dst_stride = static_cast<size_t>(targetWidth) * bytes_per_pixel;
+
+    for (uint32_t y = 0; y < targetHeight; ++y) {
+        const auto& ys = y_spans[y];
+        uint8_t* dst_row = dst_raw + static_cast<size_t>(y) * dst_stride;
+
+        for (uint32_t x = 0; x < targetWidth; ++x) {
+            const auto& xs = x_spans[x];
+            float sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+            for (int32_t iy = ys.start; iy < ys.end; ++iy) {
+                float wy = ys.weights[iy - ys.start];
+                const uint8_t* src_row = src_raw + static_cast<size_t>(iy) * src_stride;
+
+                for (int32_t ix = xs.start; ix < xs.end; ++ix) {
+                    float w = wy * xs.weights[ix - xs.start];
+                    const uint8_t* px = src_row + static_cast<size_t>(ix) * bytes_per_pixel;
+                    for (size_t c = 0; c < bytes_per_pixel; ++c) {
+                        sum[c] += static_cast<float>(px[c]) * w;
+                    }
+                }
+            }
+
+            for (size_t c = 0; c < bytes_per_pixel; ++c) {
+                float v = sum[c] * inv_area;
+                dst_row[x * bytes_per_pixel + c] = static_cast<uint8_t>(std::clamp(std::round(v), 0.0f, 255.0f));
+            }
+        }
+    }
+
+    return out;
+}
+
 } // namespace BmpTool
 
 

@@ -441,6 +441,24 @@ Bitmap::File ConvertToPhotometricLuma(Bitmap::File bitmapFile, bool useBT709 = t
 //   A new Bitmap::File object with normalized local contrast.
 Bitmap::File ApplyLocalContrastNormalization(Bitmap::File bitmapFile, float sigma = 2.0f, float alpha = 64.0f, float epsilon = 1.0f);
 
+// Resizes an image using continuous bilinear interpolation.
+// Parameters:
+//   bitmapFile: The source image to resize.
+//   targetWidth: Target width in pixels (> 0).
+//   targetHeight: Target height in pixels (> 0).
+// Returns:
+//   A new Bitmap::File object with resized dimensions.
+Bitmap::File ResizeBilinearImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint32_t targetHeight);
+
+// Resizes an image using continuous area-averaging resampling.
+// Parameters:
+//   bitmapFile: The source image to resize.
+//   targetWidth: Target width in pixels (> 0).
+//   targetHeight: Target height in pixels (> 0).
+// Returns:
+//   A new Bitmap::File object with resized dimensions.
+Bitmap::File ResizeAreaAveragingImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint32_t targetHeight);
+
 
 
 

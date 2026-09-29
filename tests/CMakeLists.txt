@@ -13,6 +13,7 @@ set(TEST_SOURCES
     test_safe_math.cpp
     test_fuzz_regressions.cpp
     test_adversarial_filters.cpp
+    test_vision_preprocessing.cpp
     tests_main.cpp
     api_roundtrip.cpp
 )

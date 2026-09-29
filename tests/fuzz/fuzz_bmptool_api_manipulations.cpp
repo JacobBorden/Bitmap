@@ -95,7 +95,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     uint8_t operation_choice = Consume<uint8_t>(&current_data_ptr, &current_size_ptr);
     BmpTool::Result<BmpTool::Bitmap, BmpTool::BitmapError> result(BmpTool::BitmapError::UnknownError);
 
-    switch (operation_choice % 30) {
+    switch (operation_choice % 32) {
         case 0: result = BmpTool::shrink(src_bmp, ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 8)); break;
         case 1: result = BmpTool::rotateCounterClockwise(src_bmp); break;
         case 2: result = BmpTool::rotateClockwise(src_bmp); break;
@@ -136,6 +136,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
             float eps = ConsumeFloat(&current_data_ptr, &current_size_ptr, 0.1f, 5.0f);
             bool presAlpha = (Consume<uint8_t>(&current_data_ptr, &current_size_ptr) % 2) != 0;
             result = BmpTool::localContrastNormalize(src_bmp, sigma, alpha, eps, presAlpha);
+            break;
+        }
+        case 30: {
+            uint32_t tw = ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 64);
+            uint32_t th = ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 64);
+            result = BmpTool::resizeBilinear(src_bmp, tw, th);
+            break;
+        }
+        case 31: {
+            uint32_t tw = ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 64);
+            uint32_t th = ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 64);
+            result = BmpTool::resizeAreaAveraging(src_bmp, tw, th);
             break;
         }
         default:

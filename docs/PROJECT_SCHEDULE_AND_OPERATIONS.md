@@ -86,13 +86,15 @@ This document outlines the **5-week execution schedule** for the Bitmap Hardened
 ### Week 3: Vision Preprocessing & Flat Buffer Export
 **Goal**: Deliver precise geometric transformations and direct contiguous memory exports for custom neural nets.
 
-* **Day 11 (W3D1): Bilinear Interpolation Resampling**
-  * Implement `BmpTool::resizeBilinear(const Bitmap&, uint32_t targetWidth, uint32_t targetHeight)`:
-    * Continuous floating-point ratio coordinate mapping with 4-neighbor linear interpolation.
-    * Enables clean resizing to standard model resolutions (`64x64`, `128x128`, `224x224`, `640x640`).
+* **Day 11 (W3D1): Bilinear Interpolation Resampling (Completed)**
+  * Implemented `BmpTool::resizeBilinear(const Bitmap&, uint32_t targetWidth, uint32_t targetHeight)` and `ResizeBilinearImage`.
+  * Continuous floating-point ratio coordinate mapping with half-pixel alignment and 4-neighbor linear interpolation.
+  * Verified resizing across standard model resolutions (`64x64`, `128x128`, `224x224`, `640x640`), 24bpp/32bpp, and alpha preservation.
 
-* **Day 12 (W3D2): Area-Averaging Resampling**
-  * Implement area-weighted box sampling for large downscaling factors (e.g. 4K down to 224x224) to eliminate Moiré and aliasing artifacts.
+* **Day 12 (W3D2): Area-Averaging Resampling (Completed)**
+  * Implemented `BmpTool::resizeAreaAveraging(const Bitmap&, uint32_t targetWidth, uint32_t targetHeight)` and `ResizeAreaAveragingImage`.
+  * Continuous sub-pixel area-weighted box sampling for downscaling, eliminating Moiré and aliasing artifacts with seamless bilinear upscaling fallback.
+  * Unit tests verified uniform color conservation, energy integral conservation, and anti-aliasing.
 
 * **Day 13 (W3D3): Letterbox Padding & Aspect-Ratio Preservation**
   * Implement `BmpTool::letterbox(const Bitmap&, uint32_t targetWidth, uint32_t targetHeight, Pixel padColor)`:

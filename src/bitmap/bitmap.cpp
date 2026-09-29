@@ -468,6 +468,179 @@ Bitmap::File ApplyLocalContrastNormalization(Bitmap::File bitmapFile, float sigm
     return CreateBitmapFromMatrix(normalizedMatrix);
 }
 
+// Resizes an image using continuous bilinear interpolation.
+Bitmap::File ResizeBilinearImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint32_t targetHeight)
+{
+    if (targetWidth == 0 || targetHeight == 0 ||
+        targetWidth > BmpTool::SafeMath::MAX_SAFE_DIMENSION ||
+        targetHeight > BmpTool::SafeMath::MAX_SAFE_DIMENSION) {
+        return Bitmap::File{};
+    }
+
+    Matrix::Matrix<Pixel> srcMatrix = CreateMatrixFromBitmap(bitmapFile);
+    const int srcH = static_cast<int>(srcMatrix.rows());
+    const int srcW = static_cast<int>(srcMatrix.cols());
+    if (srcH == 0 || srcW == 0) {
+        return Bitmap::File{};
+    }
+
+    if (static_cast<uint32_t>(srcW) == targetWidth && static_cast<uint32_t>(srcH) == targetHeight) {
+        return bitmapFile;
+    }
+
+    Matrix::Matrix<Pixel> dstMatrix(targetHeight, targetWidth);
+    const float scaleX = static_cast<float>(srcW) / static_cast<float>(targetWidth);
+    const float scaleY = static_cast<float>(srcH) / static_cast<float>(targetHeight);
+
+    struct XCoord {
+        int x0, x1;
+        float w0, w1;
+    };
+    std::vector<XCoord> xCoords(targetWidth);
+    for (uint32_t x = 0; x < targetWidth; ++x) {
+        float srcX = (static_cast<float>(x) + 0.5f) * scaleX - 0.5f;
+        int x0 = static_cast<int>(std::floor(srcX));
+        int x1 = x0 + 1;
+        float dx = srcX - static_cast<float>(x0);
+        x0 = std::clamp(x0, 0, srcW - 1);
+        x1 = std::clamp(x1, 0, srcW - 1);
+        dx = std::clamp(dx, 0.0f, 1.0f);
+        xCoords[x] = { x0, x1, 1.0f - dx, dx };
+    }
+
+    for (uint32_t y = 0; y < targetHeight; ++y) {
+        float srcY = (static_cast<float>(y) + 0.5f) * scaleY - 0.5f;
+        int y0 = static_cast<int>(std::floor(srcY));
+        int y1 = y0 + 1;
+        float dy = srcY - static_cast<float>(y0);
+        y0 = std::clamp(y0, 0, srcH - 1);
+        y1 = std::clamp(y1, 0, srcH - 1);
+        dy = std::clamp(dy, 0.0f, 1.0f);
+        float wy0 = 1.0f - dy;
+        float wy1 = dy;
+
+        for (uint32_t x = 0; x < targetWidth; ++x) {
+            const auto& xc = xCoords[x];
+            float w00 = xc.w0 * wy0;
+            float w10 = xc.w1 * wy0;
+            float w01 = xc.w0 * wy1;
+            float w11 = xc.w1 * wy1;
+
+            const Pixel& p00 = srcMatrix[y0][xc.x0];
+            const Pixel& p10 = srcMatrix[y0][xc.x1];
+            const Pixel& p01 = srcMatrix[y1][xc.x0];
+            const Pixel& p11 = srcMatrix[y1][xc.x1];
+
+            Pixel out;
+            out.blue  = static_cast<BYTE>(std::clamp(std::round(w00 * p00.blue  + w10 * p10.blue  + w01 * p01.blue  + w11 * p11.blue),  0.0f, 255.0f));
+            out.green = static_cast<BYTE>(std::clamp(std::round(w00 * p00.green + w10 * p10.green + w01 * p01.green + w11 * p11.green), 0.0f, 255.0f));
+            out.red   = static_cast<BYTE>(std::clamp(std::round(w00 * p00.red   + w10 * p10.red   + w01 * p01.red   + w11 * p11.red),   0.0f, 255.0f));
+            out.alpha = static_cast<BYTE>(std::clamp(std::round(w00 * p00.alpha + w10 * p10.alpha + w01 * p01.alpha + w11 * p11.alpha), 0.0f, 255.0f));
+            dstMatrix[y][x] = out;
+        }
+    }
+
+    return CreateBitmapFromMatrix(dstMatrix);
+}
+
+// Resizes an image using continuous area-averaging resampling.
+Bitmap::File ResizeAreaAveragingImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint32_t targetHeight)
+{
+    if (targetWidth == 0 || targetHeight == 0 ||
+        targetWidth > BmpTool::SafeMath::MAX_SAFE_DIMENSION ||
+        targetHeight > BmpTool::SafeMath::MAX_SAFE_DIMENSION) {
+        return Bitmap::File{};
+    }
+
+    Matrix::Matrix<Pixel> srcMatrix = CreateMatrixFromBitmap(bitmapFile);
+    const int srcH = static_cast<int>(srcMatrix.rows());
+    const int srcW = static_cast<int>(srcMatrix.cols());
+    if (srcH == 0 || srcW == 0) {
+        return Bitmap::File{};
+    }
+
+    if (static_cast<uint32_t>(srcW) == targetWidth && static_cast<uint32_t>(srcH) == targetHeight) {
+        return bitmapFile;
+    }
+
+    if (targetWidth > static_cast<uint32_t>(srcW) || targetHeight > static_cast<uint32_t>(srcH)) {
+        return ResizeBilinearImage(bitmapFile, targetWidth, targetHeight);
+    }
+
+    Matrix::Matrix<Pixel> dstMatrix(targetHeight, targetWidth);
+    const float scaleX = static_cast<float>(srcW) / static_cast<float>(targetWidth);
+    const float scaleY = static_cast<float>(srcH) / static_cast<float>(targetHeight);
+    const float invArea = 1.0f / (scaleX * scaleY);
+
+    struct Span1D {
+        int start, end;
+        std::vector<float> weights;
+    };
+
+    std::vector<Span1D> xSpans(targetWidth);
+    for (uint32_t x = 0; x < targetWidth; ++x) {
+        float xStart = static_cast<float>(x) * scaleX;
+        float xEnd = static_cast<float>(x + 1) * scaleX;
+        int ix0 = static_cast<int>(std::floor(xStart));
+        int ix1 = static_cast<int>(std::ceil(xEnd));
+        ix0 = std::clamp(ix0, 0, srcW - 1);
+        ix1 = std::clamp(ix1, ix0 + 1, srcW);
+        xSpans[x].start = ix0;
+        xSpans[x].end = ix1;
+        xSpans[x].weights.resize(ix1 - ix0);
+        for (int i = ix0; i < ix1; ++i) {
+            float w = std::min(static_cast<float>(i + 1), xEnd) - std::max(static_cast<float>(i), xStart);
+            xSpans[x].weights[i - ix0] = std::max(0.0f, w);
+        }
+    }
+
+    std::vector<Span1D> ySpans(targetHeight);
+    for (uint32_t y = 0; y < targetHeight; ++y) {
+        float yStart = static_cast<float>(y) * scaleY;
+        float yEnd = static_cast<float>(y + 1) * scaleY;
+        int iy0 = static_cast<int>(std::floor(yStart));
+        int iy1 = static_cast<int>(std::ceil(yEnd));
+        iy0 = std::clamp(iy0, 0, srcH - 1);
+        iy1 = std::clamp(iy1, iy0 + 1, srcH);
+        ySpans[y].start = iy0;
+        ySpans[y].end = iy1;
+        ySpans[y].weights.resize(iy1 - iy0);
+        for (int i = iy0; i < iy1; ++i) {
+            float w = std::min(static_cast<float>(i + 1), yEnd) - std::max(static_cast<float>(i), yStart);
+            ySpans[y].weights[i - iy0] = std::max(0.0f, w);
+        }
+    }
+
+    for (uint32_t y = 0; y < targetHeight; ++y) {
+        const auto& ys = ySpans[y];
+        for (uint32_t x = 0; x < targetWidth; ++x) {
+            const auto& xs = xSpans[x];
+            float sumB = 0.0f, sumG = 0.0f, sumR = 0.0f, sumA = 0.0f;
+
+            for (int iy = ys.start; iy < ys.end; ++iy) {
+                float wy = ys.weights[iy - ys.start];
+                for (int ix = xs.start; ix < xs.end; ++ix) {
+                    float w = wy * xs.weights[ix - xs.start];
+                    const Pixel& p = srcMatrix[iy][ix];
+                    sumB += static_cast<float>(p.blue)  * w;
+                    sumG += static_cast<float>(p.green) * w;
+                    sumR += static_cast<float>(p.red)   * w;
+                    sumA += static_cast<float>(p.alpha) * w;
+                }
+            }
+
+            Pixel out;
+            out.blue  = static_cast<BYTE>(std::clamp(std::round(sumB * invArea), 0.0f, 255.0f));
+            out.green = static_cast<BYTE>(std::clamp(std::round(sumG * invArea), 0.0f, 255.0f));
+            out.red   = static_cast<BYTE>(std::clamp(std::round(sumR * invArea), 0.0f, 255.0f));
+            out.alpha = static_cast<BYTE>(std::clamp(std::round(sumA * invArea), 0.0f, 255.0f));
+            dstMatrix[y][x] = out;
+        }
+    }
+
+    return CreateBitmapFromMatrix(dstMatrix);
+}
+
 
 
 

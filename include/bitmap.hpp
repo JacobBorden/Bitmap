@@ -517,6 +517,41 @@ Result<Bitmap, BitmapError> extractPhotometricLuma(const Bitmap& bitmap, Photome
  */
 Result<Bitmap, BitmapError> localContrastNormalize(const Bitmap& bitmap, float sigma = 2.0f, float alpha = 64.0f, float epsilon = 1.0f, bool preserveAlpha = true);
 
+/**
+ * @brief Resizes an image using bilinear interpolation.
+ *
+ * Maps continuous output coordinates to source coordinates with half-pixel alignment:
+ *   src_x = (x + 0.5f) * (src_width / dst_width) - 0.5f
+ *   src_y = (y + 0.5f) * (src_height / dst_height) - 0.5f
+ * Computes 4-neighbor weighted linear interpolation with boundary clamping.
+ *
+ * Supports both 24bpp (BGR) and 32bpp (BGRA/RGBA) contiguous bitmaps.
+ *
+ * @param bitmap The source bitmap.
+ * @param targetWidth The desired target width in pixels (must be > 0 and <= MAX_SAFE_DIMENSION).
+ * @param targetHeight The desired target height in pixels (must be > 0 and <= MAX_SAFE_DIMENSION).
+ * @return Result containing the resized Bitmap or an error.
+ */
+Result<Bitmap, BitmapError> resizeBilinear(const Bitmap& bitmap, uint32_t targetWidth, uint32_t targetHeight);
+
+/**
+ * @brief Resizes an image using continuous area-averaging resampling.
+ *
+ * For downscaling, computes exact continuous sub-pixel coverage overlap weights:
+ *   weight(x, y) = overlap_x(x) * overlap_y(y)
+ * Eliminates Moiré patterns, high-frequency aliasing, and sampling noise when downscaling
+ * by large factors (e.g. 4K down to 224x224).
+ * If upscaling is requested in either dimension, seamlessly blends via bilinear interpolation.
+ *
+ * Supports both 24bpp (BGR) and 32bpp (BGRA/RGBA) contiguous bitmaps.
+ *
+ * @param bitmap The source bitmap.
+ * @param targetWidth The desired target width in pixels (must be > 0 and <= MAX_SAFE_DIMENSION).
+ * @param targetHeight The desired target height in pixels (must be > 0 and <= MAX_SAFE_DIMENSION).
+ * @return Result containing the resized Bitmap or an error.
+ */
+Result<Bitmap, BitmapError> resizeAreaAveraging(const Bitmap& bitmap, uint32_t targetWidth, uint32_t targetHeight);
+
 } // namespace BmpTool
 
 
