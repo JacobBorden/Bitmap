@@ -84,7 +84,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
     Bitmap::File result_bmp_file; 
     
-    switch (operation_choice % 30) { 
+    switch (operation_choice % 31) { 
         case 0: result_bmp_file = ShrinkImage(bmp_file, ConsumeInt(&Data, &Size, 1, 8)); break;
         case 1: result_bmp_file = RotateImageCounterClockwise(bmp_file); break;
         case 2: result_bmp_file = RotateImageClockwise(bmp_file); break;
@@ -115,6 +115,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
         case 27: result_bmp_file = ApplyLocalContrastNormalization(bmp_file, ConsumeFloat(&Data, &Size, 0.5f, 3.0f), ConsumeFloat(&Data, &Size, 10.0f, 100.0f), ConsumeFloat(&Data, &Size, 0.1f, 5.0f)); break;
         case 28: result_bmp_file = ResizeBilinearImage(bmp_file, ConsumeInt(&Data, &Size, 1, 64), ConsumeInt(&Data, &Size, 1, 64)); break;
         case 29: result_bmp_file = ResizeAreaAveragingImage(bmp_file, ConsumeInt(&Data, &Size, 1, 64), ConsumeInt(&Data, &Size, 1, 64)); break;
+        case 30: result_bmp_file = LetterboxImage(bmp_file, ConsumeInt(&Data, &Size, 1, 64), ConsumeInt(&Data, &Size, 1, 64)); break;
     }
 
 

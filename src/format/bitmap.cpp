@@ -2332,6 +2332,119 @@ Result<Bitmap, BitmapError> resizeAreaAveraging(const Bitmap& bitmap, uint32_t t
     return out;
 }
 
+Result<Bitmap, BitmapError> letterbox(const Bitmap& bitmap, uint32_t targetWidth, uint32_t targetHeight,
+                                      PadColor padColor, LetterboxMetadata* outMeta) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+    if (targetWidth == 0 || targetHeight == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (targetWidth > SafeMath::MAX_SAFE_DIMENSION || targetHeight > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t src_total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), src_total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t src_expected_bytes = 0;
+    if (!SafeMath::multiply(src_total_pixels, bytes_per_pixel, src_expected_bytes) || src_expected_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < src_expected_bytes) {
+        return BitmapError::InvalidImageData;
+    }
+
+    size_t dst_total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(targetWidth), static_cast<size_t>(targetHeight), dst_total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t dst_expected_bytes = 0;
+    if (!SafeMath::multiply(dst_total_pixels, bytes_per_pixel, dst_expected_bytes) || dst_expected_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+
+    const float rw = static_cast<float>(targetWidth) / static_cast<float>(bitmap.w);
+    const float rh = static_cast<float>(targetHeight) / static_cast<float>(bitmap.h);
+    const float r = std::min(rw, rh);
+
+    uint32_t scaled_w = std::clamp(static_cast<uint32_t>(std::round(static_cast<float>(bitmap.w) * r)), 1u, targetWidth);
+    uint32_t scaled_h = std::clamp(static_cast<uint32_t>(std::round(static_cast<float>(bitmap.h) * r)), 1u, targetHeight);
+
+    Bitmap resized;
+    if (scaled_w == bitmap.w && scaled_h == bitmap.h) {
+        resized = bitmap;
+    } else if (scaled_w <= bitmap.w && scaled_h <= bitmap.h) {
+        auto res = resizeAreaAveraging(bitmap, scaled_w, scaled_h);
+        if (!res.isSuccess()) {
+            return res.error();
+        }
+        resized = res.value();
+    } else {
+        auto res = resizeBilinear(bitmap, scaled_w, scaled_h);
+        if (!res.isSuccess()) {
+            return res.error();
+        }
+        resized = res.value();
+    }
+
+    Bitmap out;
+    out.w = targetWidth;
+    out.h = targetHeight;
+    out.bpp = bitmap.bpp;
+    out.data.resize(dst_expected_bytes);
+
+    uint8_t* dst_raw = out.data.data();
+    if (bitmap.bpp == 32) {
+        for (size_t i = 0; i < dst_total_pixels; ++i) {
+            dst_raw[i * 4 + 0] = padColor.r;
+            dst_raw[i * 4 + 1] = padColor.g;
+            dst_raw[i * 4 + 2] = padColor.b;
+            dst_raw[i * 4 + 3] = padColor.a;
+        }
+    } else { // 24bpp
+        for (size_t i = 0; i < dst_total_pixels; ++i) {
+            dst_raw[i * 3 + 0] = padColor.r;
+            dst_raw[i * 3 + 1] = padColor.g;
+            dst_raw[i * 3 + 2] = padColor.b;
+        }
+    }
+
+    uint32_t pad_left = (targetWidth - scaled_w) / 2;
+    uint32_t pad_top = (targetHeight - scaled_h) / 2;
+
+    const uint8_t* src_resized_raw = resized.data.data();
+    const size_t resized_stride = static_cast<size_t>(scaled_w) * bytes_per_pixel;
+    const size_t dst_stride = static_cast<size_t>(targetWidth) * bytes_per_pixel;
+    const size_t copy_bytes = static_cast<size_t>(scaled_w) * bytes_per_pixel;
+
+    for (uint32_t y = 0; y < scaled_h && (pad_top + y) < targetHeight; ++y) {
+        uint8_t* dst_row = dst_raw + static_cast<size_t>(pad_top + y) * dst_stride + static_cast<size_t>(pad_left) * bytes_per_pixel;
+        const uint8_t* src_row = src_resized_raw + static_cast<size_t>(y) * resized_stride;
+        std::memcpy(dst_row, src_row, copy_bytes);
+    }
+
+    if (outMeta != nullptr) {
+        outMeta->targetWidth = targetWidth;
+        outMeta->targetHeight = targetHeight;
+        outMeta->scaledWidth = scaled_w;
+        outMeta->scaledHeight = scaled_h;
+        outMeta->padLeft = pad_left;
+        outMeta->padTop = pad_top;
+        outMeta->scaleRatio = r;
+    }
+
+    return out;
+}
+
 } // namespace BmpTool
 
 

@@ -552,6 +552,52 @@ Result<Bitmap, BitmapError> resizeBilinear(const Bitmap& bitmap, uint32_t target
  */
 Result<Bitmap, BitmapError> resizeAreaAveraging(const Bitmap& bitmap, uint32_t targetWidth, uint32_t targetHeight);
 
+/**
+ * @brief Metadata recording the geometric transformation applied during letterbox padding.
+ *
+ * Essential for neural object detection and keypoint pipelines to map bounding boxes
+ * and predictions from model space back into raw camera/screen coordinates:
+ *   x_raw = (x_letterbox - padLeft) / scaleRatio
+ *   y_raw = (y_letterbox - padTop) / scaleRatio
+ */
+struct LetterboxMetadata {
+    uint32_t targetWidth{0};
+    uint32_t targetHeight{0};
+    uint32_t scaledWidth{0};
+    uint32_t scaledHeight{0};
+    uint32_t padLeft{0};
+    uint32_t padTop{0};
+    float scaleRatio{1.0f};
+};
+
+/**
+ * @brief 4-channel color descriptor for letterbox padding and background fills.
+ */
+struct PadColor {
+    uint8_t r{114};
+    uint8_t g{114};
+    uint8_t b{114};
+    uint8_t a{255};
+};
+
+/**
+ * @brief Scales an image to fit within target dimensions while preserving exact aspect ratio,
+ * centering the image and applying uniform neutral padding.
+ *
+ * Defaults to neutral gray (114, 114, 114) padding as required by YOLO and modern
+ * vision models to prevent aspect ratio distortion and edge boundary artifacts.
+ *
+ * @param bitmap The source image.
+ * @param targetWidth Desired target width (must be > 0 and <= MAX_SAFE_DIMENSION).
+ * @param targetHeight Desired target height (must be > 0 and <= MAX_SAFE_DIMENSION).
+ * @param padColor Color used to fill the letterbox margins (defaults to 114/114/114).
+ * @param outMeta Optional pointer to LetterboxMetadata struct to populate with transform parameters.
+ * @return Result containing the letterboxed Bitmap or an error.
+ */
+Result<Bitmap, BitmapError> letterbox(const Bitmap& bitmap, uint32_t targetWidth, uint32_t targetHeight,
+                                      PadColor padColor = PadColor{114, 114, 114, 255},
+                                      LetterboxMetadata* outMeta = nullptr);
+
 } // namespace BmpTool
 
 

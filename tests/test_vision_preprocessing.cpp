@@ -371,3 +371,220 @@ TEST(VisionPreprocessingTest, LegacyEngine_ResizeAreaAveraging) {
     EXPECT_EQ(out_mat[0][0].green, 220);
     EXPECT_EQ(out_mat[0][0].red, 50);
 }
+
+// ===========================================================================
+// Day 13: Letterbox Padding & Aspect-Ratio Preservation Tests
+// ===========================================================================
+
+TEST(VisionPreprocessingTest, Letterbox_SquareToSquare) {
+    auto bmp = createTestBitmap32(10, 10, 255, 0, 0, 255);
+    BmpTool::LetterboxMetadata meta;
+    auto res = BmpTool::letterbox(bmp, 20, 20, BmpTool::PadColor{114, 114, 114, 255}, &meta);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& lb = res.value();
+
+    EXPECT_EQ(lb.w, 20u);
+    EXPECT_EQ(lb.h, 20u);
+    EXPECT_EQ(meta.targetWidth, 20u);
+    EXPECT_EQ(meta.targetHeight, 20u);
+    EXPECT_EQ(meta.scaledWidth, 20u);
+    EXPECT_EQ(meta.scaledHeight, 20u);
+    EXPECT_EQ(meta.padLeft, 0u);
+    EXPECT_EQ(meta.padTop, 0u);
+    EXPECT_FLOAT_EQ(meta.scaleRatio, 2.0f);
+
+    // Entire canvas must be red (scaled 1:1 without letterbox bars)
+    for (size_t i = 0; i < lb.data.size(); i += 4) {
+        EXPECT_EQ(lb.data[i], 255);
+        EXPECT_EQ(lb.data[i + 1], 0);
+        EXPECT_EQ(lb.data[i + 2], 0);
+    }
+}
+
+TEST(VisionPreprocessingTest, Letterbox_HorizontalPanoramicToSquare) {
+    // 20x10 pure blue image letterboxed to 20x20
+    // Aspect ratio 2:1 -> Scale ratio = min(20/20, 20/10) = 1.0
+    // scaledW = 20, scaledH = 10 -> padLeft = 0, padTop = 5
+    auto bmp = createTestBitmap32(20, 10, 0, 0, 255, 255);
+    BmpTool::LetterboxMetadata meta;
+    auto res = BmpTool::letterbox(bmp, 20, 20, BmpTool::PadColor{114, 114, 114, 255}, &meta);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& lb = res.value();
+
+    EXPECT_EQ(lb.w, 20u);
+    EXPECT_EQ(lb.h, 20u);
+    EXPECT_EQ(meta.scaledWidth, 20u);
+    EXPECT_EQ(meta.scaledHeight, 10u);
+    EXPECT_EQ(meta.padLeft, 0u);
+    EXPECT_EQ(meta.padTop, 5u);
+    EXPECT_FLOAT_EQ(meta.scaleRatio, 1.0f);
+
+    // Top padding rows (y in [0, 4]) must be neutral gray (114, 114, 114)
+    for (uint32_t y = 0; y < 5; ++y) {
+        for (uint32_t x = 0; x < 20; ++x) {
+            size_t idx = (y * 20 + x) * 4;
+            EXPECT_EQ(lb.data[idx], 114) << "Mismatch at pad top row " << y;
+            EXPECT_EQ(lb.data[idx + 1], 114);
+            EXPECT_EQ(lb.data[idx + 2], 114);
+        }
+    }
+
+    // Centered image rows (y in [5, 14]) must be blue (0, 0, 255)
+    for (uint32_t y = 5; y < 15; ++y) {
+        for (uint32_t x = 0; x < 20; ++x) {
+            size_t idx = (y * 20 + x) * 4;
+            EXPECT_EQ(lb.data[idx], 0) << "Mismatch at image row " << y;
+            EXPECT_EQ(lb.data[idx + 1], 0);
+            EXPECT_EQ(lb.data[idx + 2], 255);
+        }
+    }
+
+    // Bottom padding rows (y in [15, 19]) must be neutral gray (114, 114, 114)
+    for (uint32_t y = 15; y < 20; ++y) {
+        for (uint32_t x = 0; x < 20; ++x) {
+            size_t idx = (y * 20 + x) * 4;
+            EXPECT_EQ(lb.data[idx], 114) << "Mismatch at pad bottom row " << y;
+            EXPECT_EQ(lb.data[idx + 1], 114);
+            EXPECT_EQ(lb.data[idx + 2], 114);
+        }
+    }
+}
+
+TEST(VisionPreprocessingTest, Letterbox_VerticalPortraitToSquare) {
+    // 10x20 pure green image letterboxed to 20x20
+    // Aspect ratio 1:2 -> Scale ratio = min(20/10, 20/20) = 1.0
+    // scaledW = 10, scaledH = 20 -> padLeft = 5, padTop = 0
+    auto bmp = createTestBitmap32(10, 20, 0, 255, 0, 255);
+    BmpTool::LetterboxMetadata meta;
+    auto res = BmpTool::letterbox(bmp, 20, 20, BmpTool::PadColor{50, 50, 50, 255}, &meta);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& lb = res.value();
+
+    EXPECT_EQ(lb.w, 20u);
+    EXPECT_EQ(lb.h, 20u);
+    EXPECT_EQ(meta.scaledWidth, 10u);
+    EXPECT_EQ(meta.scaledHeight, 20u);
+    EXPECT_EQ(meta.padLeft, 5u);
+    EXPECT_EQ(meta.padTop, 0u);
+
+    // Left padding columns (x in [0, 4]) must be (50, 50, 50)
+    for (uint32_t y = 0; y < 20; ++y) {
+        for (uint32_t x = 0; x < 5; ++x) {
+            size_t idx = (y * 20 + x) * 4;
+            EXPECT_EQ(lb.data[idx], 50);
+            EXPECT_EQ(lb.data[idx + 1], 50);
+            EXPECT_EQ(lb.data[idx + 2], 50);
+        }
+    }
+
+    // Centered columns (x in [5, 14]) must be green (0, 255, 0)
+    for (uint32_t y = 0; y < 20; ++y) {
+        for (uint32_t x = 5; x < 15; ++x) {
+            size_t idx = (y * 20 + x) * 4;
+            EXPECT_EQ(lb.data[idx], 0);
+            EXPECT_EQ(lb.data[idx + 1], 255);
+            EXPECT_EQ(lb.data[idx + 2], 0);
+        }
+    }
+
+    // Right padding columns (x in [15, 19]) must be (50, 50, 50)
+    for (uint32_t y = 0; y < 20; ++y) {
+        for (uint32_t x = 15; x < 20; ++x) {
+            size_t idx = (y * 20 + x) * 4;
+            EXPECT_EQ(lb.data[idx], 50);
+            EXPECT_EQ(lb.data[idx + 1], 50);
+            EXPECT_EQ(lb.data[idx + 2], 50);
+        }
+    }
+}
+
+TEST(VisionPreprocessingTest, Letterbox_BoundingBoxCoordinateInversion) {
+    // Simulate neural object detection mapping:
+    // Raw camera: 1920x1080 -> Letterbox model input: 640x640
+    auto bmp = createTestBitmap32(1920, 1080, 100, 100, 100);
+    BmpTool::LetterboxMetadata meta;
+    auto res = BmpTool::letterbox(bmp, 640, 640, BmpTool::PadColor{114, 114, 114, 255}, &meta);
+    ASSERT_TRUE(res.isSuccess());
+
+    // Scale ratio = 640 / 1920 = 1/3
+    EXPECT_NEAR(meta.scaleRatio, 640.0f / 1920.0f, 1e-4f);
+    EXPECT_EQ(meta.scaledWidth, 640u);
+    EXPECT_EQ(meta.scaledHeight, 360u);
+    EXPECT_EQ(meta.padLeft, 0u);
+    EXPECT_EQ(meta.padTop, 140u); // (640 - 360) / 2 = 140
+
+    // Bounding box on model prediction: [padLeft, padTop, padLeft + scaledWidth, padTop + scaledHeight]
+    float box_x1 = static_cast<float>(meta.padLeft);
+    float box_y1 = static_cast<float>(meta.padTop);
+    float box_x2 = static_cast<float>(meta.padLeft + meta.scaledWidth);
+    float box_y2 = static_cast<float>(meta.padTop + meta.scaledHeight);
+
+    // Map back to original image space
+    float raw_x1 = (box_x1 - meta.padLeft) / meta.scaleRatio;
+    float raw_y1 = (box_y1 - meta.padTop) / meta.scaleRatio;
+    float raw_x2 = (box_x2 - meta.padLeft) / meta.scaleRatio;
+    float raw_y2 = (box_y2 - meta.padTop) / meta.scaleRatio;
+
+    EXPECT_NEAR(raw_x1, 0.0f, 0.5f);
+    EXPECT_NEAR(raw_y1, 0.0f, 0.5f);
+    EXPECT_NEAR(raw_x2, 1920.0f, 0.5f);
+    EXPECT_NEAR(raw_y2, 1080.0f, 0.5f);
+}
+
+TEST(VisionPreprocessingTest, Letterbox_24bppSupport) {
+    auto bmp24 = createTestBitmap24(8, 4, 10, 20, 30);
+    BmpTool::LetterboxMetadata meta;
+    auto res = BmpTool::letterbox(bmp24, 8, 8, BmpTool::PadColor{114, 114, 114, 255}, &meta);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& lb = res.value();
+
+    EXPECT_EQ(lb.bpp, 24u);
+    EXPECT_EQ(lb.w, 8u);
+    EXPECT_EQ(lb.h, 8u);
+    EXPECT_EQ(meta.padTop, 2u);
+
+    // Row 0 is pad
+    EXPECT_EQ(lb.data[0], 114);
+    EXPECT_EQ(lb.data[1], 114);
+    EXPECT_EQ(lb.data[2], 114);
+
+    // Row 2 is image
+    size_t img_idx = 2 * 8 * 3;
+    EXPECT_EQ(lb.data[img_idx], 10);
+    EXPECT_EQ(lb.data[img_idx + 1], 20);
+    EXPECT_EQ(lb.data[img_idx + 2], 30);
+}
+
+TEST(VisionPreprocessingTest, Letterbox_ParameterValidation) {
+    auto bmp = createTestBitmap32(4, 4, 10, 20, 30);
+    EXPECT_TRUE(BmpTool::letterbox(bmp, 0, 4).isError());
+    EXPECT_TRUE(BmpTool::letterbox(bmp, 4, 0).isError());
+    EXPECT_TRUE(BmpTool::letterbox(bmp, BmpTool::SafeMath::MAX_SAFE_DIMENSION + 1, 4).isError());
+
+    auto zero_bmp = bmp;
+    zero_bmp.w = 0;
+    EXPECT_TRUE(BmpTool::letterbox(zero_bmp, 4, 4).isError());
+}
+
+TEST(VisionPreprocessingTest, LegacyEngine_LetterboxImage) {
+    Matrix::Matrix<Pixel> mat(4, 2);
+    Pixel white_pixel = {255, 255, 255, 255};
+    for (int y = 0; y < 4; ++y) for (int x = 0; x < 2; ++x) mat[y][x] = white_pixel;
+
+    Bitmap::File bmp = CreateBitmapFromMatrix(mat);
+    ASSERT_TRUE(bmp.IsValid());
+
+    Pixel gray_pad = {114, 114, 114, 255};
+    Bitmap::File lb_file = LetterboxImage(bmp, 4, 4, gray_pad);
+    ASSERT_TRUE(lb_file.IsValid());
+    Matrix::Matrix<Pixel> lb_mat = CreateMatrixFromBitmap(lb_file);
+    ASSERT_EQ(lb_mat.rows(), 4);
+    ASSERT_EQ(lb_mat.cols(), 4);
+
+    // Height = 4, Width = 2 -> r = min(4/2, 4/4) = 1.0. scaledW = 2, scaledH = 4.
+    // padLeft = 1, padTop = 0
+    EXPECT_EQ(lb_mat[0][0].red, 114); // pad
+    EXPECT_EQ(lb_mat[0][1].red, 255); // image
+    EXPECT_EQ(lb_mat[0][2].red, 255); // image
+    EXPECT_EQ(lb_mat[0][3].red, 114); // pad
+}

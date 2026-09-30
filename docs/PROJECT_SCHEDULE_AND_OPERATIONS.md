@@ -96,10 +96,11 @@ This document outlines the **5-week execution schedule** for the Bitmap Hardened
   * Continuous sub-pixel area-weighted box sampling for downscaling, eliminating Moiré and aliasing artifacts with seamless bilinear upscaling fallback.
   * Unit tests verified uniform color conservation, energy integral conservation, and anti-aliasing.
 
-* **Day 13 (W3D3): Letterbox Padding & Aspect-Ratio Preservation**
-  * Implement `BmpTool::letterbox(const Bitmap&, uint32_t targetWidth, uint32_t targetHeight, Pixel padColor)`:
-    * Scales image to fit bounding box while maintaining exact aspect ratio.
-    * Centers image and applies uniform padding (defaulting to neutral gray `114/114/114` as required by object detection models like YOLO).
+* **Day 13 (W3D3): Letterbox Padding & Aspect-Ratio Preservation (Completed)**
+  * Implemented `BmpTool::letterbox(const Bitmap&, uint32_t targetWidth, uint32_t targetHeight, PadColor, LetterboxMetadata*)` and `LetterboxImage`.
+  * Scales image to fit bounding box with exact aspect-ratio preservation and neutral padding (defaulting to neutral gray `114/114/114` for YOLO/detection models).
+  * Returns `LetterboxMetadata` recording scale ratio and pixel offsets for invertibility of bounding box predictions back to raw screen/camera space.
+  * Verified panoramic, portrait, 24bpp, 32bpp, and coordinate inversion accuracy.
 
 * **Day 14 (W3D4): Region of Interest (ROI) Crop & Flat Buffer Export**
   * Implement bounding box / ROI slicing: `BmpTool::crop(const Bitmap&, uint32_t x, uint32_t y, uint32_t w, uint32_t h)`.

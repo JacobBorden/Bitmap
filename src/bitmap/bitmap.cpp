@@ -641,6 +641,66 @@ Bitmap::File ResizeAreaAveragingImage(Bitmap::File bitmapFile, uint32_t targetWi
     return CreateBitmapFromMatrix(dstMatrix);
 }
 
+// Applies letterbox padding to preserve exact aspect ratio within target dimensions.
+Bitmap::File LetterboxImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint32_t targetHeight, Pixel padColor)
+{
+    if (targetWidth == 0 || targetHeight == 0 ||
+        targetWidth > BmpTool::SafeMath::MAX_SAFE_DIMENSION ||
+        targetHeight > BmpTool::SafeMath::MAX_SAFE_DIMENSION) {
+        return Bitmap::File{};
+    }
+
+    Matrix::Matrix<Pixel> srcMatrix = CreateMatrixFromBitmap(bitmapFile);
+    const int srcH = static_cast<int>(srcMatrix.rows());
+    const int srcW = static_cast<int>(srcMatrix.cols());
+    if (srcH == 0 || srcW == 0) {
+        return Bitmap::File{};
+    }
+
+    const float rw = static_cast<float>(targetWidth) / static_cast<float>(srcW);
+    const float rh = static_cast<float>(targetHeight) / static_cast<float>(srcH);
+    const float r = std::min(rw, rh);
+
+    uint32_t scaledW = std::clamp(static_cast<uint32_t>(std::round(static_cast<float>(srcW) * r)), 1u, targetWidth);
+    uint32_t scaledH = std::clamp(static_cast<uint32_t>(std::round(static_cast<float>(srcH) * r)), 1u, targetHeight);
+
+    Bitmap::File resizedBmp;
+    if (scaledW == static_cast<uint32_t>(srcW) && scaledH == static_cast<uint32_t>(srcH)) {
+        resizedBmp = bitmapFile;
+    } else if (scaledW <= static_cast<uint32_t>(srcW) && scaledH <= static_cast<uint32_t>(srcH)) {
+        resizedBmp = ResizeAreaAveragingImage(bitmapFile, scaledW, scaledH);
+    } else {
+        resizedBmp = ResizeBilinearImage(bitmapFile, scaledW, scaledH);
+    }
+
+    if (!resizedBmp.IsValid()) {
+        return Bitmap::File{};
+    }
+
+    Matrix::Matrix<Pixel> resizedMatrix = CreateMatrixFromBitmap(resizedBmp);
+    if (resizedMatrix.rows() == 0 || resizedMatrix.cols() == 0) {
+        return Bitmap::File{};
+    }
+
+    Matrix::Matrix<Pixel> canvas(targetHeight, targetWidth);
+    for (uint32_t y = 0; y < targetHeight; ++y) {
+        for (uint32_t x = 0; x < targetWidth; ++x) {
+            canvas[y][x] = padColor;
+        }
+    }
+
+    uint32_t padLeft = (targetWidth - scaledW) / 2;
+    uint32_t padTop = (targetHeight - scaledH) / 2;
+
+    for (uint32_t y = 0; y < scaledH && (padTop + y) < targetHeight; ++y) {
+        for (uint32_t x = 0; x < scaledW && (padLeft + x) < targetWidth; ++x) {
+            canvas[padTop + y][padLeft + x] = resizedMatrix[y][x];
+        }
+    }
+
+    return CreateBitmapFromMatrix(canvas);
+}
+
 
 
 

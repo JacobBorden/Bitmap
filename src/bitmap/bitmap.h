@@ -459,6 +459,16 @@ Bitmap::File ResizeBilinearImage(Bitmap::File bitmapFile, uint32_t targetWidth, 
 //   A new Bitmap::File object with resized dimensions.
 Bitmap::File ResizeAreaAveragingImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint32_t targetHeight);
 
+// Applies letterbox padding to preserve exact aspect ratio within target dimensions.
+// Parameters:
+//   bitmapFile: The source image.
+//   targetWidth: Desired target canvas width.
+//   targetHeight: Desired target canvas height.
+//   padColor: Background fill color for padding margins (defaults to neutral gray 114/114/114).
+// Returns:
+//   A new Bitmap::File object centered and padded to targetWidth x targetHeight.
+Bitmap::File LetterboxImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint32_t targetHeight, Pixel padColor = {114, 114, 114, 255});
+
 
 
 
