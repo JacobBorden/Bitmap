@@ -588,3 +588,212 @@ TEST(VisionPreprocessingTest, LegacyEngine_LetterboxImage) {
     EXPECT_EQ(lb_mat[0][2].red, 255); // image
     EXPECT_EQ(lb_mat[0][3].red, 114); // pad
 }
+
+TEST(VisionPreprocessingTest, Crop_ValidSubregion) {
+    // 10x10 image with unique RGBA pixel values based on coordinates
+    BmpTool::Bitmap bmp;
+    bmp.w = 10;
+    bmp.h = 10;
+    bmp.bpp = 32;
+    bmp.data.resize(10 * 10 * 4);
+    for (uint32_t y = 0; y < 10; ++y) {
+        for (uint32_t x = 0; x < 10; ++x) {
+            size_t idx = (y * 10 + x) * 4;
+            bmp.data[idx + 0] = static_cast<uint8_t>(x * 10);
+            bmp.data[idx + 1] = static_cast<uint8_t>(y * 10);
+            bmp.data[idx + 2] = static_cast<uint8_t>(x + y);
+            bmp.data[idx + 3] = 255;
+        }
+    }
+
+    auto res = BmpTool::crop(bmp, 2, 3, 4, 5);
+    ASSERT_TRUE(res.isSuccess());
+    const auto& cropped = res.value();
+
+    EXPECT_EQ(cropped.w, 4u);
+    EXPECT_EQ(cropped.h, 5u);
+    EXPECT_EQ(cropped.bpp, 32u);
+    EXPECT_EQ(cropped.data.size(), 4u * 5u * 4u);
+
+    for (uint32_t r = 0; r < 5; ++r) {
+        for (uint32_t c = 0; c < 4; ++c) {
+            size_t crop_idx = (r * 4 + c) * 4;
+            uint32_t orig_x = 2 + c;
+            uint32_t orig_y = 3 + r;
+            EXPECT_EQ(cropped.data[crop_idx + 0], static_cast<uint8_t>(orig_x * 10));
+            EXPECT_EQ(cropped.data[crop_idx + 1], static_cast<uint8_t>(orig_y * 10));
+            EXPECT_EQ(cropped.data[crop_idx + 2], static_cast<uint8_t>(orig_x + orig_y));
+            EXPECT_EQ(cropped.data[crop_idx + 3], 255);
+        }
+    }
+}
+
+TEST(VisionPreprocessingTest, Crop_OutOfBoundsRejection) {
+    auto bmp = createTestBitmap32(10, 10, 50, 50, 50);
+
+    // x + w > bitmap.w
+    EXPECT_TRUE(BmpTool::crop(bmp, 8, 2, 4, 4).isError());
+    // y + h > bitmap.h
+    EXPECT_TRUE(BmpTool::crop(bmp, 2, 8, 4, 4).isError());
+    // Zero width / height
+    EXPECT_TRUE(BmpTool::crop(bmp, 2, 2, 0, 4).isError());
+    EXPECT_TRUE(BmpTool::crop(bmp, 2, 2, 4, 0).isError());
+    // Overflow
+    EXPECT_TRUE(BmpTool::crop(bmp, UINT32_MAX, 0, 10, 10).isError());
+}
+
+TEST(VisionPreprocessingTest, Crop_24bppAnd32bpp) {
+    auto bmp24 = createTestBitmap24(6, 6, 12, 34, 56);
+    auto res24 = BmpTool::crop(bmp24, 1, 1, 3, 3);
+    ASSERT_TRUE(res24.isSuccess());
+    EXPECT_EQ(res24.value().w, 3u);
+    EXPECT_EQ(res24.value().h, 3u);
+    EXPECT_EQ(res24.value().bpp, 24u);
+    EXPECT_EQ(res24.value().data.size(), 3u * 3u * 3u);
+    EXPECT_EQ(res24.value().data[0], 12);
+    EXPECT_EQ(res24.value().data[1], 34);
+    EXPECT_EQ(res24.value().data[2], 56);
+}
+
+TEST(VisionPreprocessingTest, ExportPlanarFloat_ImageNetStandardization) {
+    // 2x2 bitmap with known RGB values
+    BmpTool::Bitmap bmp;
+    bmp.w = 2;
+    bmp.h = 2;
+    bmp.bpp = 32;
+    bmp.data = {
+        255,   0, 128, 255,  // Pixel (0,0)
+          0, 255,  64, 255,  // Pixel (1,0)
+        128, 128, 255, 255,  // Pixel (0,1)
+         50,  75, 100, 255   // Pixel (1,1)
+    };
+
+    std::vector<float> planar_buffer(3 * 2 * 2);
+    auto res = BmpTool::exportPlanarFloat(bmp, planar_buffer, BmpTool::NormalizationParams::ImageNet());
+    ASSERT_TRUE(res.isSuccess());
+
+    // NCHW planes: R plane [0..3], G plane [4..7], B plane [8..11]
+    const float* R = planar_buffer.data();
+    const float* G = R + 4;
+    const float* B = G + 4;
+
+    // Check Pixel (0,0): R=255, G=0, B=128
+    // R: (255/255.0 - 0.485) / 0.229 = (1.0 - 0.485) / 0.229 = 0.515 / 0.229
+    EXPECT_NEAR(R[0], (1.0f - 0.485f) / 0.229f, 1e-4f);
+    // G: (0/255.0 - 0.456) / 0.224 = -0.456 / 0.224
+    EXPECT_NEAR(G[0], (0.0f - 0.456f) / 0.224f, 1e-4f);
+    // B: (128/255.0 - 0.406) / 0.225
+    EXPECT_NEAR(B[0], ((128.0f / 255.0f) - 0.406f) / 0.225f, 1e-4f);
+
+    // Check Pixel (1,0): R=0, G=255, B=64
+    EXPECT_NEAR(R[1], (0.0f - 0.485f) / 0.229f, 1e-4f);
+    EXPECT_NEAR(G[1], (1.0f - 0.456f) / 0.224f, 1e-4f);
+    EXPECT_NEAR(B[1], ((64.0f / 255.0f) - 0.406f) / 0.225f, 1e-4f);
+}
+
+TEST(VisionPreprocessingTest, ExportInterleavedFloat_NHWCLayout) {
+    // 2x1 bitmap with MinusOneToOne normalization
+    BmpTool::Bitmap bmp;
+    bmp.w = 2;
+    bmp.h = 1;
+    bmp.bpp = 24;
+    bmp.data = {
+          0, 255, 128,  // Pixel 0: R=0, G=255, B=128
+        255,   0,  64   // Pixel 1: R=255, G=0, B=64
+    };
+
+    std::vector<float> nhwc_buffer(3 * 2 * 1);
+    auto res = BmpTool::exportInterleavedFloat(bmp, nhwc_buffer, BmpTool::NormalizationParams::MinusOneToOne());
+    ASSERT_TRUE(res.isSuccess());
+
+    // Interleaved [H, W, C]: [R0, G0, B0, R1, G1, B1]
+    // MinusOneToOne: (val / 255.0 - 0.5) / 0.5 = val / 127.5 - 1.0
+    // Pixel 0:
+    EXPECT_NEAR(nhwc_buffer[0], -1.0f, 1e-4f);
+    EXPECT_NEAR(nhwc_buffer[1], 1.0f, 1e-4f);
+    EXPECT_NEAR(nhwc_buffer[2], (128.0f / 127.5f) - 1.0f, 1e-4f);
+
+    // Pixel 1:
+    EXPECT_NEAR(nhwc_buffer[3], 1.0f, 1e-4f);
+    EXPECT_NEAR(nhwc_buffer[4], -1.0f, 1e-4f);
+    EXPECT_NEAR(nhwc_buffer[5], (64.0f / 127.5f) - 1.0f, 1e-4f);
+}
+
+TEST(VisionPreprocessingTest, ExportPlanarUint8_Deinterleave) {
+    // 3x1 bitmap
+    BmpTool::Bitmap bmp;
+    bmp.w = 3;
+    bmp.h = 1;
+    bmp.bpp = 32;
+    bmp.data = {
+        10, 20, 30, 255,
+        40, 50, 60, 255,
+        70, 80, 90, 255
+    };
+
+    std::vector<uint8_t> planar_buffer(3 * 3 * 1);
+    auto res = BmpTool::exportPlanarUint8(bmp, planar_buffer);
+    ASSERT_TRUE(res.isSuccess());
+
+    // Plane 0 (R): 10, 40, 70
+    EXPECT_EQ(planar_buffer[0], 10);
+    EXPECT_EQ(planar_buffer[1], 40);
+    EXPECT_EQ(planar_buffer[2], 70);
+
+    // Plane 1 (G): 20, 50, 80
+    EXPECT_EQ(planar_buffer[3], 20);
+    EXPECT_EQ(planar_buffer[4], 50);
+    EXPECT_EQ(planar_buffer[5], 80);
+
+    // Plane 2 (B): 30, 60, 90
+    EXPECT_EQ(planar_buffer[6], 30);
+    EXPECT_EQ(planar_buffer[7], 60);
+    EXPECT_EQ(planar_buffer[8], 90);
+}
+
+TEST(VisionPreprocessingTest, Export_BufferTooSmall) {
+    auto bmp = createTestBitmap32(4, 4, 10, 20, 30);
+    // Required size is 4 * 4 * 3 = 48 elements
+    std::vector<float> small_float_buf(40);
+    std::vector<uint8_t> small_uint8_buf(40);
+
+    auto res1 = BmpTool::exportPlanarFloat(bmp, small_float_buf);
+    EXPECT_TRUE(res1.isError());
+    EXPECT_EQ(res1.error(), BmpTool::BitmapError::OutputBufferTooSmall);
+
+    auto res2 = BmpTool::exportInterleavedFloat(bmp, small_float_buf);
+    EXPECT_TRUE(res2.isError());
+    EXPECT_EQ(res2.error(), BmpTool::BitmapError::OutputBufferTooSmall);
+
+    auto res3 = BmpTool::exportPlanarUint8(bmp, small_uint8_buf);
+    EXPECT_TRUE(res3.isError());
+    EXPECT_EQ(res3.error(), BmpTool::BitmapError::OutputBufferTooSmall);
+}
+
+TEST(VisionPreprocessingTest, LegacyEngine_CropImage) {
+    Matrix::Matrix<Pixel> mat(4, 4);
+    for (int y = 0; y < 4; ++y) {
+        for (int x = 0; x < 4; ++x) {
+            mat[y][x] = Pixel{static_cast<BYTE>(x * 10), static_cast<BYTE>(y * 10), 0, 255};
+        }
+    }
+
+    Bitmap::File bmp = CreateBitmapFromMatrix(mat);
+    ASSERT_TRUE(bmp.IsValid());
+
+    Bitmap::File cropped = CropImage(bmp, 1, 1, 2, 2);
+    ASSERT_TRUE(cropped.IsValid());
+    Matrix::Matrix<Pixel> crop_mat = CreateMatrixFromBitmap(cropped);
+    ASSERT_EQ(crop_mat.rows(), 2);
+    ASSERT_EQ(crop_mat.cols(), 2);
+
+    EXPECT_EQ(crop_mat[0][0].blue, 10);
+    EXPECT_EQ(crop_mat[0][0].green, 10);
+    EXPECT_EQ(crop_mat[1][1].blue, 20);
+    EXPECT_EQ(crop_mat[1][1].green, 20);
+
+    // Invalid crop returns invalid Bitmap::File
+    Bitmap::File invalid_crop = CropImage(bmp, 3, 3, 2, 2);
+    EXPECT_FALSE(invalid_crop.IsValid());
+}
+

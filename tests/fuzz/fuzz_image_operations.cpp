@@ -84,7 +84,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
 
     Bitmap::File result_bmp_file; 
     
-    switch (operation_choice % 31) { 
+    switch (operation_choice % 32) { 
         case 0: result_bmp_file = ShrinkImage(bmp_file, ConsumeInt(&Data, &Size, 1, 8)); break;
         case 1: result_bmp_file = RotateImageCounterClockwise(bmp_file); break;
         case 2: result_bmp_file = RotateImageClockwise(bmp_file); break;
@@ -116,6 +116,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
         case 28: result_bmp_file = ResizeBilinearImage(bmp_file, ConsumeInt(&Data, &Size, 1, 64), ConsumeInt(&Data, &Size, 1, 64)); break;
         case 29: result_bmp_file = ResizeAreaAveragingImage(bmp_file, ConsumeInt(&Data, &Size, 1, 64), ConsumeInt(&Data, &Size, 1, 64)); break;
         case 30: result_bmp_file = LetterboxImage(bmp_file, ConsumeInt(&Data, &Size, 1, 64), ConsumeInt(&Data, &Size, 1, 64)); break;
+        case 31: result_bmp_file = CropImage(bmp_file, ConsumeInt(&Data, &Size, 0, 32), ConsumeInt(&Data, &Size, 0, 32), ConsumeInt(&Data, &Size, 1, 32), ConsumeInt(&Data, &Size, 1, 32)); break;
     }
 
 

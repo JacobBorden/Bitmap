@@ -469,6 +469,17 @@ Bitmap::File ResizeAreaAveragingImage(Bitmap::File bitmapFile, uint32_t targetWi
 //   A new Bitmap::File object centered and padded to targetWidth x targetHeight.
 Bitmap::File LetterboxImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint32_t targetHeight, Pixel padColor = {114, 114, 114, 255});
 
+// Crops a rectangular region of interest (ROI) from the bitmap image.
+// Parameters:
+//   bitmapFile: The source image to crop.
+//   x: Top-left X coordinate of the crop rectangle.
+//   y: Top-left Y coordinate of the crop rectangle.
+//   w: Width of the cropped region (> 0).
+//   h: Height of the cropped region (> 0).
+// Returns:
+//   A new Bitmap::File object containing the cropped subregion.
+Bitmap::File CropImage(Bitmap::File bitmapFile, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+
 
 
 

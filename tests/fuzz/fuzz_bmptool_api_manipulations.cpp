@@ -95,7 +95,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
     uint8_t operation_choice = Consume<uint8_t>(&current_data_ptr, &current_size_ptr);
     BmpTool::Result<BmpTool::Bitmap, BmpTool::BitmapError> result(BmpTool::BitmapError::UnknownError);
 
-    switch (operation_choice % 33) {
+    switch (operation_choice % 34) {
         case 0: result = BmpTool::shrink(src_bmp, ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 8)); break;
         case 1: result = BmpTool::rotateCounterClockwise(src_bmp); break;
         case 2: result = BmpTool::rotateClockwise(src_bmp); break;
@@ -157,10 +157,26 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
             result = BmpTool::letterbox(src_bmp, tw, th, BmpTool::PadColor{114, 114, 114, 255}, &meta);
             break;
         }
+        case 33: {
+            uint32_t cx = ConsumeInt(&current_data_ptr, &current_size_ptr, 0, 64);
+            uint32_t cy = ConsumeInt(&current_data_ptr, &current_size_ptr, 0, 64);
+            uint32_t cw = ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 64);
+            uint32_t ch = ConsumeInt(&current_data_ptr, &current_size_ptr, 1, 64);
+            result = BmpTool::crop(src_bmp, cx, cy, cw, ch);
+            break;
+        }
         default:
             result = BmpTool::greyscale(src_bmp);
             break;
     }
+
+    // Exercise flat tensor buffer export methods with the fuzzed src_bmp
+    std::vector<float> planar_float_buf(3 * static_cast<size_t>(src_bmp.w) * src_bmp.h);
+    (void)BmpTool::exportPlanarFloat(src_bmp, planar_float_buf, BmpTool::NormalizationParams::ImageNet());
+    std::vector<float> interleaved_float_buf(3 * static_cast<size_t>(src_bmp.w) * src_bmp.h);
+    (void)BmpTool::exportInterleavedFloat(src_bmp, interleaved_float_buf, BmpTool::NormalizationParams::MinusOneToOne());
+    std::vector<uint8_t> planar_uint8_buf(3 * static_cast<size_t>(src_bmp.w) * src_bmp.h);
+    (void)BmpTool::exportPlanarUint8(src_bmp, planar_uint8_buf);
 
 
 

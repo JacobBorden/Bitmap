@@ -701,6 +701,39 @@ Bitmap::File LetterboxImage(Bitmap::File bitmapFile, uint32_t targetWidth, uint3
     return CreateBitmapFromMatrix(canvas);
 }
 
+// Crops a rectangular region of interest (ROI) from the bitmap image.
+Bitmap::File CropImage(Bitmap::File bitmapFile, uint32_t x, uint32_t y, uint32_t w, uint32_t h)
+{
+    if (w == 0 || h == 0 ||
+        w > BmpTool::SafeMath::MAX_SAFE_DIMENSION ||
+        h > BmpTool::SafeMath::MAX_SAFE_DIMENSION) {
+        return Bitmap::File{};
+    }
+
+    Matrix::Matrix<Pixel> srcMatrix = CreateMatrixFromBitmap(bitmapFile);
+    const uint32_t srcH = static_cast<uint32_t>(srcMatrix.rows());
+    const uint32_t srcW = static_cast<uint32_t>(srcMatrix.cols());
+    if (srcH == 0 || srcW == 0) {
+        return Bitmap::File{};
+    }
+
+    uint32_t endX = 0;
+    uint32_t endY = 0;
+    if (!BmpTool::SafeMath::add(x, w, endX) || endX > srcW ||
+        !BmpTool::SafeMath::add(y, h, endY) || endY > srcH) {
+        return Bitmap::File{};
+    }
+
+    Matrix::Matrix<Pixel> dstMatrix(h, w);
+    for (uint32_t r = 0; r < h; ++r) {
+        for (uint32_t c = 0; c < w; ++c) {
+            dstMatrix[r][c] = srcMatrix[y + r][x + c];
+        }
+    }
+
+    return CreateBitmapFromMatrix(dstMatrix);
+}
+
 
 
 

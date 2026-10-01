@@ -598,6 +598,100 @@ Result<Bitmap, BitmapError> letterbox(const Bitmap& bitmap, uint32_t targetWidth
                                       PadColor padColor = PadColor{114, 114, 114, 255},
                                       LetterboxMetadata* outMeta = nullptr);
 
+/**
+ * @brief Normalization parameters for converting uint8 pixels into standardized floating-point tensors.
+ *
+ * Supports torchvision/ImageNet standard standardization:
+ *   val = (x / 255.0f - mean[c]) / std[c]
+ */
+struct NormalizationParams {
+    float mean[3]{0.0f, 0.0f, 0.0f}; ///< Per-channel (R, G, B) mean offset.
+    float std[3]{1.0f, 1.0f, 1.0f};  ///< Per-channel (R, G, B) standard deviation scale.
+    bool scaleToUnit{true};           ///< If true, scales byte [0, 255] to [0.0, 1.0] before applying mean & std.
+
+    /// ImageNet standard: mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+    static NormalizationParams ImageNet() {
+        NormalizationParams p;
+        p.mean[0] = 0.485f; p.mean[1] = 0.456f; p.mean[2] = 0.406f;
+        p.std[0]  = 0.229f; p.std[1]  = 0.224f; p.std[2]  = 0.225f;
+        p.scaleToUnit = true;
+        return p;
+    }
+
+    /// Zero-mean [-1.0, 1.0] standard (e.g. MobileNet / Inception): mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]
+    static NormalizationParams MinusOneToOne() {
+        NormalizationParams p;
+        p.mean[0] = 0.5f; p.mean[1] = 0.5f; p.mean[2] = 0.5f;
+        p.std[0]  = 0.5f; p.std[1]  = 0.5f; p.std[2]  = 0.5f;
+        p.scaleToUnit = true;
+        return p;
+    }
+
+    /// Default [0.0, 1.0] unit float tensor
+    static NormalizationParams ZeroToOne() {
+        NormalizationParams p;
+        p.mean[0] = 0.0f; p.mean[1] = 0.0f; p.mean[2] = 0.0f;
+        p.std[0]  = 1.0f; p.std[1]  = 1.0f; p.std[2]  = 1.0f;
+        p.scaleToUnit = true;
+        return p;
+    }
+};
+
+/**
+ * @brief Crops a rectangular region of interest (ROI) from the bitmap.
+ *
+ * @param bitmap The source image.
+ * @param x Top-left column coordinate.
+ * @param y Top-left row coordinate.
+ * @param w Width of the cropped region in pixels (must be > 0 and x + w <= bitmap.w).
+ * @param h Height of the cropped region in pixels (must be > 0 and y + h <= bitmap.h).
+ * @return Result containing the cropped Bitmap or an error.
+ */
+Result<Bitmap, BitmapError> crop(const Bitmap& bitmap, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+
+/**
+ * @brief Exports image pixels as planar floating-point buffer ([C, H, W] layout / NCHW).
+ *
+ * Standard tensor layout for PyTorch, TensorRT, and ONNX Runtime:
+ *   Plane 0 (R): outBuffer[0 * H * W ... 1 * H * W - 1]
+ *   Plane 1 (G): outBuffer[1 * H * W ... 2 * H * W - 1]
+ *   Plane 2 (B): outBuffer[2 * H * W ... 3 * H * W - 1]
+ *
+ * @param bitmap The source image (24bpp or 32bpp).
+ * @param outBuffer Destination span of floats (must have size >= 3 * bitmap.w * bitmap.h).
+ * @param norm Normalization parameters (defaults to [0.0, 1.0] range).
+ * @return Result<void, BitmapError> indicating success or error.
+ */
+Result<void, BitmapError> exportPlanarFloat(const Bitmap& bitmap, std::span<float> outBuffer,
+                                            NormalizationParams norm = NormalizationParams::ZeroToOne());
+
+/**
+ * @brief Exports image pixels as interleaved floating-point buffer ([H, W, C] layout / NHWC).
+ *
+ * Standard tensor layout for TensorFlow, OpenCV, and hardware accelerators:
+ *   outBuffer[i * 3 + 0] = R
+ *   outBuffer[i * 3 + 1] = G
+ *   outBuffer[i * 3 + 2] = B
+ *
+ * @param bitmap The source image (24bpp or 32bpp).
+ * @param outBuffer Destination span of floats (must have size >= 3 * bitmap.w * bitmap.h).
+ * @param norm Normalization parameters (defaults to [0.0, 1.0] range).
+ * @return Result<void, BitmapError> indicating success or error.
+ */
+Result<void, BitmapError> exportInterleavedFloat(const Bitmap& bitmap, std::span<float> outBuffer,
+                                                 NormalizationParams norm = NormalizationParams::ZeroToOne());
+
+/**
+ * @brief Exports image pixels as planar uint8 buffer ([C, H, W] byte layout).
+ *
+ * De-interleaves RGB channels into three contiguous planes without floating-point conversion.
+ *
+ * @param bitmap The source image (24bpp or 32bpp).
+ * @param outBuffer Destination span of bytes (must have size >= 3 * bitmap.w * bitmap.h).
+ * @return Result<void, BitmapError> indicating success or error.
+ */
+Result<void, BitmapError> exportPlanarUint8(const Bitmap& bitmap, std::span<uint8_t> outBuffer);
+
 } // namespace BmpTool
 
 

@@ -2445,6 +2445,226 @@ Result<Bitmap, BitmapError> letterbox(const Bitmap& bitmap, uint32_t targetWidth
     return out;
 }
 
+Result<Bitmap, BitmapError> crop(const Bitmap& bitmap, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (w == 0 || h == 0 || bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION ||
+        w > SafeMath::MAX_SAFE_DIMENSION || h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+
+    uint32_t endX = 0;
+    uint32_t endY = 0;
+    if (!SafeMath::add(x, w, endX) || endX > bitmap.w ||
+        !SafeMath::add(y, h, endY) || endY > bitmap.h) {
+        return BitmapError::InvalidImageData;
+    }
+
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t src_total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), src_total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t src_expected_bytes = 0;
+    if (!SafeMath::multiply(src_total_pixels, bytes_per_pixel, src_expected_bytes) || src_expected_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < src_expected_bytes) {
+        return BitmapError::InvalidImageData;
+    }
+
+    size_t dst_total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(w), static_cast<size_t>(h), dst_total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t dst_expected_bytes = 0;
+    if (!SafeMath::multiply(dst_total_pixels, bytes_per_pixel, dst_expected_bytes) || dst_expected_bytes > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+
+    Bitmap out;
+    out.w = w;
+    out.h = h;
+    out.bpp = bitmap.bpp;
+    out.data.resize(dst_expected_bytes);
+
+    const uint8_t* src_raw = bitmap.data.data();
+    uint8_t* dst_raw = out.data.data();
+    const size_t src_stride = static_cast<size_t>(bitmap.w) * bytes_per_pixel;
+    const size_t dst_stride = static_cast<size_t>(w) * bytes_per_pixel;
+    const size_t copy_bytes = static_cast<size_t>(w) * bytes_per_pixel;
+
+    for (uint32_t r = 0; r < h; ++r) {
+        const uint8_t* src_row = src_raw + static_cast<size_t>(y + r) * src_stride + static_cast<size_t>(x) * bytes_per_pixel;
+        uint8_t* dst_row = dst_raw + static_cast<size_t>(r) * dst_stride;
+        std::memcpy(dst_row, src_row, copy_bytes);
+    }
+
+    return out;
+}
+
+Result<void, BitmapError> exportPlanarFloat(const Bitmap& bitmap, std::span<float> outBuffer,
+                                            NormalizationParams norm) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+
+    for (int c = 0; c < 3; ++c) {
+        if (!std::isfinite(norm.mean[c]) || !std::isfinite(norm.std[c]) || norm.std[c] == 0.0f) {
+            return BitmapError::InvalidImageData;
+        }
+    }
+
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t required_floats = 0;
+    if (!SafeMath::multiply(total_pixels, size_t{3}, required_floats)) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (outBuffer.size() < required_floats) {
+        return BitmapError::OutputBufferTooSmall;
+    }
+
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t expected_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, bytes_per_pixel, expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < expected_data_size) {
+        return BitmapError::InvalidImageData;
+    }
+
+    float* outR = outBuffer.data();
+    float* outG = outR + total_pixels;
+    float* outB = outG + total_pixels;
+
+    const float invStd[3] = { 1.0f / norm.std[0], 1.0f / norm.std[1], 1.0f / norm.std[2] };
+    const float scaleFactor = norm.scaleToUnit ? (1.0f / 255.0f) : 1.0f;
+    const uint8_t* p = bitmap.data.data();
+
+    for (size_t i = 0; i < total_pixels; ++i) {
+        outR[i] = (static_cast<float>(p[0]) * scaleFactor - norm.mean[0]) * invStd[0];
+        outG[i] = (static_cast<float>(p[1]) * scaleFactor - norm.mean[1]) * invStd[1];
+        outB[i] = (static_cast<float>(p[2]) * scaleFactor - norm.mean[2]) * invStd[2];
+        p += bytes_per_pixel;
+    }
+
+    return Success{};
+}
+
+Result<void, BitmapError> exportInterleavedFloat(const Bitmap& bitmap, std::span<float> outBuffer,
+                                                 NormalizationParams norm) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+
+    for (int c = 0; c < 3; ++c) {
+        if (!std::isfinite(norm.mean[c]) || !std::isfinite(norm.std[c]) || norm.std[c] == 0.0f) {
+            return BitmapError::InvalidImageData;
+        }
+    }
+
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t required_floats = 0;
+    if (!SafeMath::multiply(total_pixels, size_t{3}, required_floats)) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (outBuffer.size() < required_floats) {
+        return BitmapError::OutputBufferTooSmall;
+    }
+
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t expected_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, bytes_per_pixel, expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < expected_data_size) {
+        return BitmapError::InvalidImageData;
+    }
+
+    float* out = outBuffer.data();
+    const float invStd[3] = { 1.0f / norm.std[0], 1.0f / norm.std[1], 1.0f / norm.std[2] };
+    const float scaleFactor = norm.scaleToUnit ? (1.0f / 255.0f) : 1.0f;
+    const uint8_t* p = bitmap.data.data();
+
+    for (size_t i = 0; i < total_pixels; ++i) {
+        out[i * 3 + 0] = (static_cast<float>(p[0]) * scaleFactor - norm.mean[0]) * invStd[0];
+        out[i * 3 + 1] = (static_cast<float>(p[1]) * scaleFactor - norm.mean[1]) * invStd[1];
+        out[i * 3 + 2] = (static_cast<float>(p[2]) * scaleFactor - norm.mean[2]) * invStd[2];
+        p += bytes_per_pixel;
+    }
+
+    return Success{};
+}
+
+Result<void, BitmapError> exportPlanarUint8(const Bitmap& bitmap, std::span<uint8_t> outBuffer) {
+    if (bitmap.w == 0 || bitmap.h == 0) {
+        return BitmapError::InvalidImageData;
+    }
+    if (bitmap.bpp != 24 && bitmap.bpp != 32) {
+        return BitmapError::InvalidColorDepth;
+    }
+    if (bitmap.w > SafeMath::MAX_SAFE_DIMENSION || bitmap.h > SafeMath::MAX_SAFE_DIMENSION) {
+        return BitmapError::ExceedsMaxDimensions;
+    }
+
+    size_t total_pixels = 0;
+    if (!SafeMath::multiply(static_cast<size_t>(bitmap.w), static_cast<size_t>(bitmap.h), total_pixels)) {
+        return BitmapError::DimensionOverflow;
+    }
+    size_t required_bytes = 0;
+    if (!SafeMath::multiply(total_pixels, size_t{3}, required_bytes)) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (outBuffer.size() < required_bytes) {
+        return BitmapError::OutputBufferTooSmall;
+    }
+
+    const size_t bytes_per_pixel = bitmap.bpp / 8;
+    size_t expected_data_size = 0;
+    if (!SafeMath::multiply(total_pixels, bytes_per_pixel, expected_data_size) || expected_data_size > SafeMath::MAX_SAFE_IMAGE_BYTES) {
+        return BitmapError::DimensionOverflow;
+    }
+    if (bitmap.data.size() < expected_data_size) {
+        return BitmapError::InvalidImageData;
+    }
+
+    uint8_t* outR = outBuffer.data();
+    uint8_t* outG = outR + total_pixels;
+    uint8_t* outB = outG + total_pixels;
+
+    const uint8_t* p = bitmap.data.data();
+    for (size_t i = 0; i < total_pixels; ++i) {
+        outR[i] = p[0];
+        outG[i] = p[1];
+        outB[i] = p[2];
+        p += bytes_per_pixel;
+    }
+
+    return Success{};
+}
+
 } // namespace BmpTool
 
 

@@ -102,12 +102,13 @@ This document outlines the **5-week execution schedule** for the Bitmap Hardened
   * Returns `LetterboxMetadata` recording scale ratio and pixel offsets for invertibility of bounding box predictions back to raw screen/camera space.
   * Verified panoramic, portrait, 24bpp, 32bpp, and coordinate inversion accuracy.
 
-* **Day 14 (W3D4): Region of Interest (ROI) Crop & Flat Buffer Export**
-  * Implement bounding box / ROI slicing: `BmpTool::crop(const Bitmap&, uint32_t x, uint32_t y, uint32_t w, uint32_t h)`.
-  * Implement flat contiguous buffer exports:
-    * `BmpTool::exportPlanarFloat(const Bitmap&, std::span<float> outBuffer, NormalizationParams norm)` ($[C, H, W]$ layout).
-    * `BmpTool::exportInterleavedFloat(const Bitmap&, std::span<float> outBuffer, NormalizationParams norm)` ($[H, W, C]$ layout).
-    * `BmpTool::exportPlanarUint8(const Bitmap&, std::span<uint8_t> outBuffer)`.
+* **Day 14 (W3D4): Region of Interest (ROI) Crop & Flat Buffer Export (Completed)**
+  * Implemented bounding box / ROI slicing: `BmpTool::crop(const Bitmap&, uint32_t x, uint32_t y, uint32_t w, uint32_t h)` and `CropImage`.
+  * Implemented flat contiguous buffer exports:
+    * `BmpTool::exportPlanarFloat(const Bitmap&, std::span<float> outBuffer, NormalizationParams norm)` ($[C, H, W]$ NCHW layout for PyTorch / ONNX / TensorRT).
+    * `BmpTool::exportInterleavedFloat(const Bitmap&, std::span<float> outBuffer, NormalizationParams norm)` ($[H, W, C]$ NHWC layout for TensorFlow / OpenCV).
+    * `BmpTool::exportPlanarUint8(const Bitmap&, std::span<uint8_t> outBuffer)` ($[C, H, W]$ byte layout for quantized ingestion).
+  * Unit test suite added covering exact ImageNet standardization, $[-1.0, 1.0]$ normalization, planar channel de-interleaving, ROI subregion bounds checks, buffer overflow/underflow rejection, and fuzzing integration. 169/169 tests passing.
 
 * **Day 15 (W3D5): Week 3 Verification & Checkpoint**
   * **Checkpoint 3 Execution**:
