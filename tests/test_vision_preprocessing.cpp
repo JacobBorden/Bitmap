@@ -797,3 +797,138 @@ TEST(VisionPreprocessingTest, LegacyEngine_CropImage) {
     EXPECT_FALSE(invalid_crop.IsValid());
 }
 
+// ---------------------------------------------------------------------------
+// Week 3 Day 15: Checkpoint 3 Verification Suite
+// ---------------------------------------------------------------------------
+
+TEST(VisionPreprocessingTest, Checkpoint3_EndToEndNeuralInputPipeline) {
+    // Simulate real visual agent ingest pipeline:
+    // Raw screen capture 640x480 ->
+    // 1. ROI Crop 320x240 around area of interest
+    // 2. Resample via continuous area-averaging to 160x120
+    // 3. Letterbox to square model input canvas 224x224 (ResNet / ViT standard)
+    // 4. Export to contiguous planar float tensor [3, 224, 224] with ImageNet normalization
+    const uint32_t raw_w = 640, raw_h = 480;
+    auto raw_screen = createTestBitmap32(raw_w, raw_h, 120, 150, 180, 255);
+
+    // Step 1: Crop
+    auto crop_res = BmpTool::crop(raw_screen, 100, 100, 320, 240);
+    ASSERT_TRUE(crop_res.isSuccess());
+    const auto& cropped = crop_res.value();
+    EXPECT_EQ(cropped.w, 320u);
+    EXPECT_EQ(cropped.h, 240u);
+
+    // Step 2: Downsample with anti-aliasing area averaging
+    auto resize_res = BmpTool::resizeAreaAveraging(cropped, 160, 120);
+    ASSERT_TRUE(resize_res.isSuccess());
+    const auto& resized = resize_res.value();
+    EXPECT_EQ(resized.w, 160u);
+    EXPECT_EQ(resized.h, 120u);
+
+    // Step 3: Letterbox to 224x224
+    BmpTool::LetterboxMetadata meta;
+    auto letterbox_res = BmpTool::letterbox(resized, 224, 224, BmpTool::PadColor{114, 114, 114, 255}, &meta);
+    ASSERT_TRUE(letterbox_res.isSuccess());
+    const auto& letterboxed = letterbox_res.value();
+    EXPECT_EQ(letterboxed.w, 224u);
+    EXPECT_EQ(letterboxed.h, 224u);
+
+    // Step 4: Export to PyTorch / ONNX NCHW planar tensor [3, 224, 224]
+    std::vector<float> tensor(3 * 224 * 224);
+    auto export_res = BmpTool::exportPlanarFloat(letterboxed, tensor, BmpTool::NormalizationParams::ImageNet());
+    ASSERT_TRUE(export_res.isSuccess());
+
+    // Verify all tensor values are finite and non-NaN
+    for (float val : tensor) {
+        ASSERT_TRUE(std::isfinite(val));
+    }
+
+    // Verify center pixel corresponds to cropped & resized region
+    // Center pixel: x = 112, y = 112 in 224x224 letterboxed canvas
+    // R: (120/255.0 - 0.485) / 0.229
+    size_t center_r_idx = 112 * 224 + 112;
+    EXPECT_NEAR(tensor[center_r_idx], ((120.0f / 255.0f) - 0.485f) / 0.229f, 0.05f);
+}
+
+TEST(VisionPreprocessingTest, Checkpoint3_DirectPlanarVsInterleavedConsistency) {
+    // Validate mathematical equivalence between [C, H, W] planar and [H, W, C] interleaved exports
+    auto bmp = createTestBitmap32(32, 24, 60, 120, 240, 255);
+    const size_t total_pixels = 32 * 24;
+
+    std::vector<float> planar(3 * total_pixels);
+    std::vector<float> interleaved(3 * total_pixels);
+
+    auto p_res = BmpTool::exportPlanarFloat(bmp, planar, BmpTool::NormalizationParams::ImageNet());
+    auto i_res = BmpTool::exportInterleavedFloat(bmp, interleaved, BmpTool::NormalizationParams::ImageNet());
+    ASSERT_TRUE(p_res.isSuccess());
+    ASSERT_TRUE(i_res.isSuccess());
+
+    const float* R_plane = planar.data();
+    const float* G_plane = R_plane + total_pixels;
+    const float* B_plane = G_plane + total_pixels;
+
+    for (size_t i = 0; i < total_pixels; ++i) {
+        EXPECT_FLOAT_EQ(R_plane[i], interleaved[i * 3 + 0]);
+        EXPECT_FLOAT_EQ(G_plane[i], interleaved[i * 3 + 1]);
+        EXPECT_FLOAT_EQ(B_plane[i], interleaved[i * 3 + 2]);
+    }
+}
+
+TEST(VisionPreprocessingTest, Checkpoint3_ExtremeAspectRatioStability) {
+    // Panoramic ribbon 100x4 letterboxed to 64x64
+    auto panoramic = createTestBitmap32(100, 4, 200, 100, 50, 255);
+    BmpTool::LetterboxMetadata p_meta;
+    auto p_res = BmpTool::letterbox(panoramic, 64, 64, BmpTool::PadColor{114, 114, 114, 255}, &p_meta);
+    ASSERT_TRUE(p_res.isSuccess());
+    EXPECT_EQ(p_res.value().w, 64u);
+    EXPECT_EQ(p_res.value().h, 64u);
+    EXPECT_EQ(p_meta.scaledWidth, 64u);
+    EXPECT_GT(p_meta.scaledHeight, 0u);
+    EXPECT_LE(p_meta.scaledHeight, 64u);
+
+    // Vertical needle 4x100 letterboxed to 64x64
+    auto needle = createTestBitmap32(4, 100, 50, 100, 200, 255);
+    BmpTool::LetterboxMetadata n_meta;
+    auto n_res = BmpTool::letterbox(needle, 64, 64, BmpTool::PadColor{114, 114, 114, 255}, &n_meta);
+    ASSERT_TRUE(n_res.isSuccess());
+    EXPECT_EQ(n_res.value().w, 64u);
+    EXPECT_EQ(n_res.value().h, 64u);
+    EXPECT_EQ(n_meta.scaledHeight, 64u);
+    EXPECT_GT(n_meta.scaledWidth, 0u);
+    EXPECT_LE(n_meta.scaledWidth, 64u);
+}
+
+TEST(VisionPreprocessingTest, Checkpoint3_BorderAndCornerSafety) {
+    // Validate edge cases and 1x1, 2x1, 1x2, 2x2 buffers across all Week 3 operations
+    std::vector<std::pair<uint32_t, uint32_t>> tiny_dims = {{1, 1}, {2, 1}, {1, 2}, {2, 2}};
+
+    for (const auto& [w, h] : tiny_dims) {
+        auto bmp32 = createTestBitmap32(w, h, 70, 140, 210, 255);
+        auto bmp24 = createTestBitmap24(w, h, 70, 140, 210);
+
+        // Resize bilinear
+        EXPECT_TRUE(BmpTool::resizeBilinear(bmp32, 4, 4).isSuccess());
+        EXPECT_TRUE(BmpTool::resizeBilinear(bmp24, 4, 4).isSuccess());
+
+        // Resize area averaging
+        EXPECT_TRUE(BmpTool::resizeAreaAveraging(bmp32, 1, 1).isSuccess());
+        EXPECT_TRUE(BmpTool::resizeAreaAveraging(bmp24, 1, 1).isSuccess());
+
+        // Letterbox
+        EXPECT_TRUE(BmpTool::letterbox(bmp32, 8, 8).isSuccess());
+        EXPECT_TRUE(BmpTool::letterbox(bmp24, 8, 8).isSuccess());
+
+        // Crop (1x1 from (0,0))
+        EXPECT_TRUE(BmpTool::crop(bmp32, 0, 0, 1, 1).isSuccess());
+        EXPECT_TRUE(BmpTool::crop(bmp24, 0, 0, 1, 1).isSuccess());
+
+        // Export Planar & Interleaved
+        std::vector<float> fbuf(3 * w * h);
+        std::vector<uint8_t> ubuf(3 * w * h);
+        EXPECT_TRUE(BmpTool::exportPlanarFloat(bmp32, fbuf).isSuccess());
+        EXPECT_TRUE(BmpTool::exportInterleavedFloat(bmp32, fbuf).isSuccess());
+        EXPECT_TRUE(BmpTool::exportPlanarUint8(bmp32, ubuf).isSuccess());
+    }
+}
+
+

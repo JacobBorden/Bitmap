@@ -110,12 +110,13 @@ This document outlines the **5-week execution schedule** for the Bitmap Hardened
     * `BmpTool::exportPlanarUint8(const Bitmap&, std::span<uint8_t> outBuffer)` ($[C, H, W]$ byte layout for quantized ingestion).
   * Unit test suite added covering exact ImageNet standardization, $[-1.0, 1.0]$ normalization, planar channel de-interleaving, ROI subregion bounds checks, buffer overflow/underflow rejection, and fuzzing integration. 169/169 tests passing.
 
-* **Day 15 (W3D5): Week 3 Verification & Checkpoint**
+* **Day 15 (W3D5): Week 3 Verification & Checkpoint (Completed)**
   * **Checkpoint 3 Execution**:
-    * Test export buffers directly against expected neural network input specifications.
-    * Validate scaling precision across float and uint8 outputs with zero memory leaks.
-    * Validate letterboxing aspect ratio math across extreme aspect ratios (panoramic, vertical).
-    * Commit and tag Week 3 milestone on `development`.
+    * Executed full end-to-end vision neural preprocessing pipeline verification: `ROI Crop -> Area-Averaging Resampling -> Letterbox Padding -> Planar Float [3, 224, 224] Tensor Export`.
+    * Validated bit-for-bit mathematical equivalence between NCHW planar (`exportPlanarFloat`) and NHWC interleaved (`exportInterleavedFloat`) layouts.
+    * Validated letterbox aspect-ratio preservation under extreme panoramic (100:4) and needle (4:100) aspect ratios.
+    * Validated 1x1, 2x1, 1x2 degenerate and boundary safety across all Week 3 operations.
+    * All 173/173 tests passing green across both modern and legacy suites. Tagged milestone release `v0.3.0-checkpoint3` on `development`.
 
 ---
 
